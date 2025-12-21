@@ -167,6 +167,90 @@ def _daily_reduce(ds: xr.Dataset, full_days: pd.DatetimeIndex) -> xr.Dataset:
     return out
 
 
+def _add_ens_summary_vars(ds: xr.Dataset, da_ens: xr.DataArray, base_name: str) -> xr.Dataset:
+    """Add ensemble summary variables (mean, spread, percentiles) into ds."""
+    if "ensemble" not in da_ens.dims:
+        return ds
+
+    da_mean = da_ens.mean(dim="ensemble")
+    da_std = da_ens.std(dim="ensemble", ddof=0)
+
+    units = str(da_ens.attrs.get("units", ""))
+
+    mean_name = f"{base_name}_mean"
+    spr_name = f"{base_name}_spread"
+
+    da_mean.name = mean_name
+    da_std.name = spr_name
+    if units:
+        da_mean.attrs["units"] = units
+        da_std.attrs["units"] = units
+    da_mean.attrs["description"] = "Ensemble mean"
+    da_std.attrs["description"] = "Ensemble spread (standard deviation, ddof=0)"
+
+    perc_list = [1, 5, 10, 20, 50, 80, 90, 95, 99]
+    qs = [p / 100.0 for p in perc_list]
+    try:
+        q_da = da_ens.quantile(qs, dim="ensemble", method="linear")
+    except TypeError:
+        q_da = da_ens.quantile(qs, dim="ensemble", interpolation="linear")
+
+    for p, q in zip(perc_list, qs):
+        vname = f"{base_name}_p{p:02d}"
+        one = q_da.sel(quantile=q, method="nearest").drop_vars("quantile")
+        one.name = vname
+        if units:
+            one.attrs["units"] = units
+        one.attrs["description"] = f"Ensemble percentile {p}%"
+        ds[vname] = one
+
+    ds[mean_name] = da_mean
+    ds[spr_name] = da_std
+    return ds
+
+
+def _daily_reduce_apcp(ds: xr.Dataset, full_days: pd.DatetimeIndex) -> xr.Dataset:
+    """Compute daily sum for APCP and its ensemble summary stats."""
+    if "APCP" not in ds:
+        raise KeyError("APCP not found in dataset.")
+
+    times = pd.DatetimeIndex(ds["time"].values)
+    labels = _build_day_labels_jst(times)
+    day_coord = xr.DataArray(labels.values, dims=("time",), name="day")
+
+    da = ds["APCP"]
+    g = da.groupby(day_coord)
+    sum_da = g.sum("time", skipna=False)
+    sum_da = sum_da.sel(day=full_days.values)
+    sum_da = sum_da.rename({"day": "time"})
+    sum_da.name = "APCP_daysum"
+    sum_da.attrs = dict(da.attrs or {})
+    sum_da.attrs["description"] = "Daily accumulated precipitation (sum of 24 hourly samples)"
+
+    out = xr.Dataset({"APCP_daysum": sum_da})
+    out = _add_ens_summary_vars(out, sum_da, "APCP_daysum")
+
+    out = out.assign_coords(time=("time", full_days.values))
+    for c in ds.coords:
+        if c == "time":
+            continue
+        if c in out.coords:
+            continue
+        if c in ds.variables:
+            out = out.assign_coords({c: ds[c]})
+
+    out.attrs = dict(ds.attrs or {})
+    hist = out.attrs.get("history", "")
+    if hist:
+        hist += "\n"
+    hist += "Daily APCP sum created from hourly file with JST-day definition: 01:00..24:00 (24 samples)."
+    out.attrs["history"] = hist
+    out.attrs["daily_timezone"] = "JST (+09:00), stored as naive datetime64"
+    out.attrs["daily_day_definition"] = "Each day uses 24 samples from JST 01:00..24:00 (00:00 of next day counts as 24:00)."
+    out.attrs["daily_incomplete_days"] = "Dropped (no output for incomplete day at start/end)."
+    return out
+
+
 def _default_encoding(ds: xr.Dataset) -> dict:
     enc: dict = {}
     for v in ds.data_vars:
@@ -218,7 +302,10 @@ def main(argv=None) -> int:
 
         ds_sel = ds.isel(time=keep_mask)
 
-        out = _daily_reduce(ds_sel, full_days)
+        if var == "APCP":
+            out = _daily_reduce_apcp(ds_sel, full_days)
+        else:
+            out = _daily_reduce(ds_sel, full_days)
 
         out_dir = Path(args.out_dir).expanduser().resolve() if args.out_dir else f_hourly.parent
         out_dir.mkdir(parents=True, exist_ok=True)

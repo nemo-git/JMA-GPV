@@ -28,6 +28,7 @@ Output:
 from __future__ import annotations
 
 import argparse
+import inspect
 from pathlib import Path
 import sys
 import warnings
@@ -157,6 +158,51 @@ def _apcp_equal_disagg_to_hourly(ds: xr.Dataset, varname: str = "APCP") -> xr.Da
     return out
 
 
+def _add_ens_summary_vars(ds: xr.Dataset, varname: str) -> xr.Dataset:
+    """Add ensemble summary variables (mean, spread, percentiles) for varname."""
+    if varname not in ds:
+        return ds
+    da_ens = ds[varname]
+    if "ensemble" not in da_ens.dims:
+        return ds
+
+    da_mean = da_ens.mean(dim="ensemble")
+    da_std = da_ens.std(dim="ensemble", ddof=0)
+
+    units = str(da_ens.attrs.get("units", ""))
+
+    mean_name = f"{varname}_mean"
+    spr_name = f"{varname}_spread"
+
+    da_mean.name = mean_name
+    da_std.name = spr_name
+    if units:
+        da_mean.attrs["units"] = units
+        da_std.attrs["units"] = units
+    da_mean.attrs["description"] = "Ensemble mean"
+    da_std.attrs["description"] = "Ensemble spread (standard deviation, ddof=0)"
+
+    perc_list = [1, 5, 10, 20, 50, 80, 90, 95, 99]
+    qs = [p / 100.0 for p in perc_list]
+    try:
+        q_da = da_ens.quantile(qs, dim="ensemble", method="linear")
+    except TypeError:
+        q_da = da_ens.quantile(qs, dim="ensemble", interpolation="linear")
+
+    for p, q in zip(perc_list, qs):
+        vname = f"{varname}_p{p:02d}"
+        one = q_da.sel(quantile=q, method="nearest").drop_vars("quantile")
+        one.name = vname
+        if units:
+            one.attrs["units"] = units
+        one.attrs["description"] = f"Ensemble percentile {p}%"
+        ds[vname] = one
+
+    ds[mean_name] = da_mean
+    ds[spr_name] = da_std
+    return ds
+
+
 def _to_hourly_segment(ds: xr.Dataset, var: str, method: str) -> xr.Dataset:
     """Convert one segment to hourly.
 
@@ -207,6 +253,7 @@ def _bridge_gaps(ds: xr.Dataset, max_gap_hours: int) -> xr.Dataset:
     limit_area='inside' ensures no edge extrapolation.
     """
     out = ds
+    has_limit_area = "limit_area" in inspect.signature(xr.DataArray.interpolate_na).parameters
 
     # Identify variables that depend on time
     for name, da in ds.data_vars.items():
@@ -219,19 +266,25 @@ def _bridge_gaps(ds: xr.Dataset, max_gap_hours: int) -> xr.Dataset:
 
         # interpolate_na works along time and respects other dims (ensemble/lat/lon).
         # limit=max_gap_hours fills runs up to that length (in number of steps, 1h steps).
-        out[name] = da.interpolate_na(
-            dim="time",
-            method="linear",
-            limit=max_gap_hours,
-            limit_area="inside",
-        )
+        interp_kwargs = {
+            "dim": "time",
+            "method": "linear",
+            "limit": max_gap_hours,
+        }
+        if has_limit_area:
+            interp_kwargs["limit_area"] = "inside"
+
+        out[name] = da.interpolate_na(**interp_kwargs)
 
     # attrs
     out.attrs = dict(ds.attrs or {})
     hist = out.attrs.get("history", "")
     if hist:
         hist += "\n"
-    hist += f"Bridged internal hourly gaps (<= {max_gap_hours}h) using interpolate_na(method='linear', limit_area='inside')."
+    if has_limit_area:
+        hist += f"Bridged internal hourly gaps (<= {max_gap_hours}h) using interpolate_na(method='linear', limit_area='inside')."
+    else:
+        hist += f"Bridged internal hourly gaps (<= {max_gap_hours}h) using interpolate_na(method='linear')."
     out.attrs["history"] = hist
     out.attrs["gap_bridge_max_hours"] = str(max_gap_hours)
     return out
@@ -329,6 +382,7 @@ def main(argv=None) -> int:
     if var == "APCP":
         # For precipitation, we do NOT interpolate; fill missing hours with 0 to enable daily aggregation.
         bridged = merged.fillna(0.0)
+        bridged = _add_ens_summary_vars(bridged, "APCP")
     else:
         bridged = _bridge_gaps(merged, max_gap_hours=args.max_gap_hours)
 
