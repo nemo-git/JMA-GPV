@@ -374,6 +374,11 @@ def _load_lsurf_element_ens_signed_1dcoords(grib_path: Path, element: str, inver
             idx = int(np.where(num_signed==signed)[0][0])
             out[:, idx] = buf[:, k, bi]
 
+    if element.upper() == "APCP":
+        # Convert cumulative precip to step-wise increment (difference from previous time).
+        prev = np.zeros_like(out[:1])
+        out = np.diff(out, axis=0, prepend=prev)
+
 
     # 変数名・単位
     units = getattr(msgs[0], "units", "")
