@@ -378,6 +378,8 @@ def _load_lsurf_element_ens_signed_1dcoords(grib_path: Path, element: str, inver
         # Convert cumulative precip to step-wise increment (difference from previous time).
         prev = np.zeros_like(out[:1])
         out = np.diff(out, axis=0, prepend=prev)
+        # The first step can be large due to cumulative base; mark as missing.
+        out[0] = np.nan
 
 
     # 変数名・単位
