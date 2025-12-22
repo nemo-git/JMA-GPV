@@ -786,6 +786,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="GEPS Lsurf/L-pall/1m → NetCDF（pygrib, 51/25ens, 1日前/週次/月次）")
     ap.add_argument("--date", required=True, help="基準日 yyyymmdd（1w2w: この1日前12UTC, 1m: 木曜に火/水12UTCを処理）")
     ap.add_argument("--dir", default=DEFAULT_DIR, help=f"ホームDIR（既定: {DEFAULT_DIR}）")
+    ap.add_argument("--out-root", default=None, help="出力 root（既定: <dir>/data）")
     ap.add_argument("--var", required=True, help="要素（Lsurf: TMP/RH/APCP/TCDC/PRMSL/UGRD/VGRD, L-pall: +HGT/VVEL）または短縮（例 TMP850）")
     ap.add_argument("--hgt", type=int, default=None, help="等圧面 (hPa)。指定時は L-pall を処理（例: 850）")
     ap.add_argument("--debug", action="store_true", help="ログ多め")
@@ -825,6 +826,7 @@ def main(argv=None):
             return 2
 
     base_dir = Path(args.dir)
+    out_root = Path(args.out_root).expanduser().resolve() if args.out_root else base_dir / "data"
     proc_date = datetime.strptime(args.date, "%Y%m%d")
     is_thursday = (proc_date.weekday() == 3)  # 月=0 ... 木=3
 
@@ -855,7 +857,7 @@ def main(argv=None):
             if not args.dry_run:
                 yyyy = args.date[:4]
                 elem_key = element if not is_upper else f"{element}{lvl}"
-                out_dir = base_dir / "data" / "GEPS_NC" / yyyy / elem_key
+                out_dir = out_root / "GEPS_NC" / yyyy / elem_key
                 out_nc  = out_dir / f"GEPS_1w2w_{args.date}_{elem_key}.nc"
                 try:
                     concat_time_and_save(paths, element, out_nc, debug=args.debug, level_hpa=lvl if is_upper else None)
@@ -923,7 +925,7 @@ def main(argv=None):
             # 保存（GEPS_1m_[yyyymmdd]_[要素].nc）
             yyyy_out = out_date[:4]
             elem_key = element if not is_upper else f"{element}{lvl}"
-            out_dir = base_dir / "data" / "GEPS_NC" / yyyy_out / elem_key
+            out_dir = out_root / "GEPS_NC" / yyyy_out / elem_key
             out_nc  = out_dir / f"GEPS_1m_{out_date}_{elem_key}.nc"
 
             try:
