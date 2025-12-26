@@ -318,7 +318,10 @@ def main(argv: list[str] | None = None) -> int:
 
         with open(out_csv, "a", newline="") as f:
             if header_needed:
-                f.write("name,latitude,longitude,threshold,event_date,geps_init_date,lead_time_days,percentile\n")
+                f.write(
+                    "name,latitude,longitude,threshold,event_date,geps_init_date,lead_time_days,"
+                    "event_flag,amd_tmp_min,percentile\n"
+                )
                 header_needed = False
 
             for site in sites:
@@ -394,11 +397,7 @@ def main(argv: list[str] | None = None) -> int:
                         logger.warning("Debug plot failed for %s: %s", site.name, e)
 
                 for threshold in THRESHOLDS:
-                    event_dates = amd_aligned[amd_aligned <= threshold].index
-                    if event_dates.empty:
-                        continue
-
-                    for event_date in event_dates:
+                    for event_date in time_index:
                         if event_date not in geps_mean_bc.index:
                             continue
 
@@ -415,13 +414,16 @@ def main(argv: list[str] | None = None) -> int:
                             skipped_missing += 1
                             continue
 
-                        pct = normal_cdf_percentile(amd_val, mean_val, sigma_val)
+                        event_flag = 1 if amd_val <= threshold else 0
+                        pct_input = amd_val if event_flag == 1 else float(threshold)
+                        pct = normal_cdf_percentile(pct_input, mean_val, sigma_val)
                         logger.debug(
-                            "Percentile %s %s th=%.1f amd=%.3f mean=%.3f sigma=%.3f pct=%.2f",
+                            "Percentile %s %s th=%.1f amd=%.3f input=%.3f mean=%.3f sigma=%.3f pct=%.2f",
                             site.name,
                             event_date.date(),
                             threshold,
                             amd_val,
+                            pct_input,
                             mean_val,
                             sigma_val,
                             pct,
@@ -431,7 +433,8 @@ def main(argv: list[str] | None = None) -> int:
                         row = (
                             f"{site.name},{site.lat:.6f},{site.lon:.6f},"
                             f"{threshold:.1f},{event_date.strftime('%Y-%m-%d')},"
-                            f"{current.strftime('%Y-%m-%d')},{lead_days},{pct:.1f}\n"
+                            f"{current.strftime('%Y-%m-%d')},{lead_days},"
+                            f"{event_flag},{amd_val:.2f},{pct:.1f}\n"
                         )
                         f.write(row)
                         rows_written += 1
