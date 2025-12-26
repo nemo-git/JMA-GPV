@@ -1,0 +1,4 @@
+
+python 00_run_geps_batch.py --start 20250220 --end 20250224 --var TMP,
+
+python 00_run_geps_batch.py --start 20250701 --end 20250715 --vars TMP,UGRD,VGRD,APCP --jmadata /mnt/e/jmadata --out-root /mnt/e/NC_GEPS --jobs 4
