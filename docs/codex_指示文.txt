@@ -1,0 +1,88 @@
+CODEX用 指示文（サンプル行・ログ方針つき完成版）
+----
+
+新しいプログラム 11_GEPS_FROST_th_find.py を作成し、bin/ に配置する。
+本プログラムは、GEPSの予報（日別）とメッシュ農業気象データ（確定値）を比較し、**日最低気温が閾値を下回った日（事象日）**におけるGEPSの位置づけ（パーセンタイル）を算出してCSVに出力する。
+1) コマンドライン引数
+以下を引数で受け取ること。
+--start : 解析対象期間の開始日（YYYY-MM-DD）
+--end : 解析対象期間の終了日（YYYY-MM-DD）
+--var : 解析対象変数（今回は TMP を想定。将来拡張のため残す）
+--stndata : 地点リストCSV（Name,latitude,longitude のヘッダあり）
+--gepsncdata : GEPS_NC のルートディレクトリ（例: /path/to/GEPS_NC）
+--out-dir : 出力ディレクトリ
+（任意）--amd-url : メッシュ農業気象データの取得元URL/ローカルパス（指定なしの場合は AMD_Tools4 のデフォルト動作）
+（任意）--log-level : DEBUG/INFO/WARNING（デフォルト INFO）
+2) 依存ライブラリ
+メッシュ農業気象データ取得ライブラリ AMD_Tools4.py は、本スクリプトと同じ bin/ に置かれている前提で import する。
+3) ログ出力（必須）
+logging を使用してログを出すこと（print ではなく基本は logging）。
+目安：
+INFO：処理開始/終了、処理中の日付、地点数、出力先、スキップ件数などの要約
+WARNING：入力ファイル欠損、対象日のGEPSファイルなし、欠損値が多く計算できない等
+DEBUG：選ばれた最近傍格子、delta、sigma、percentileの中間値など
+ログ例（出力イメージ）：
+INFO Start: 2025-04-01 End: 2025-05-31, sites=40
+INFO Processing GEPS init date=2025-04-10
+WARNING GEPS file not found: .../GEPS_daily_20250410_TMP.nc (skip)
+INFO Done. rows_written=123, skipped_missing=7
+4) 処理の全体ループ
+start から end まで **日付（GEPS初期日）**を1日刻みでループし、各日付について処理する（この日付を geps_init_date と呼ぶ）。
+5) 地点リスト
+stndata を読み込み、地点名 name、緯度 lat、経度 lon を保持する。
+全地点について繰り返し処理する。
+6) GEPS日別ファイルの探索
+各 geps_init_date について、次のファイルを探して読み込む：
+gepsncdata/yyyy/TMP/GEPS_daily_yyyymmdd_TMP.nc
+ファイルが存在しない場合はスキップし、次の geps_init_date へ進む。
+7) GEPSから読む変数（最近傍格子）
+対象地点（lat,lon）に最も近い格子点の、以下を time 全期間について読み込む：
+TMP_mean_daymin（日最低気温のアンサンブル平均）
+TMP_spread_daymin（日最低気温のスプレッド）
+time は geps_init_date を起点とし、長さはケースにより約14日または約30日など可変。
+8) メッシュ農業気象データ（AMD）の取得
+AMDの日最低気温（TMP_min）を、GEPSの time と同じ日付範囲で取得する（geps_time[0]〜geps_time[-1]）。
+取得例（ポイント取得）：
+import AMD_Tools4 as AMD
+timedomain = [start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")]
+lalodomain = [float(lat), float(lat), float(lon), float(lon)]
+data, tim, _lat, _lon = AMD.GetMetData_Area("TMP_min", timedomain, lalodomain, cli=False, url=amd_url)
+data = data[:, 0, 0]
+amd_url を指定しない場合はデフォルト取得、指定した場合はローカルファイル利用を許容する。
+9) 閾値ループ
+日最低気温の閾値 -1℃ と +3℃ の2つについてループ処理する（thresholds = [-1.0, 3.0]）。
+10) 事象日（AMD側）の抽出
+AMDの時系列において TMP_min <= threshold となる日を全て抽出し、事象日として保持する（複数日あり得る）。
+GEPSの time から外れる事象日は対象外（スキップ）。
+11) GEPS平均のバイアス補正（初日差分で平行移動）
+GEPSのアンサンブル平均（TMP_mean_daymin）を、AMDの初日（geps_time[0]）に合わせてバイアス補正する。
+delta = AMD_daymin[0] - GEPS_mean_daymin[0]
+GEPS_mean_daymin_bc = GEPS_mean_daymin + delta
+スプレッドは補正しない（そのまま使用）。
+12) 事象日におけるパーセンタイル算出とCSV出力
+各事象日について、AMDの値（amd_val）が、GEPSの分布（平均=GEPS_mean_daymin_bc、スプレッド=TMP_spread_daymin）の中で何パーセンタイルに相当するかを計算する。
+分布の仮定は「正規分布」とし、スプレッドは標準偏差（sigma）として扱う（※もし違うならここを変更しやすいよう関数化する）。
+sigma <= 0、欠損値（NaN）等は安全にスキップし、WARNINGログを出す。
+出力CSV：FROST_th_find_[startdate]_[enddate].csv（例: FROST_th_find_2025-04-01_2025-05-31.csv）
+CSVは追記形式で1行ずつ保存し、ヘッダは最初の1回だけ書く。
+列は以下の順：
+name
+latitude
+longitude
+threshold（-1 or 3）
+event_date（事象発生日：YYYY-MM-DD）
+geps_init_date（GEPS初期日：YYYY-MM-DD）
+lead_time_days（event_date - geps_init_date の日数）
+percentile（0〜100）
+CSVのサンプル1行（例）
+（例：富良野、閾値 -1℃、事象日が2025-04-15、GEPS初期日が2025-04-10、リード5日、パーセンタイル12.3）
+Furano,43.3421,142.3833,-1.0,2025-04-15,2025-04-10,5,12.3
+13) ループ制御
+事象日を全て処理したら次の閾値へ。
+全閾値を処理したら次の地点へ。
+全地点を処理したら次の geps_init_date へ。
+全日付を処理したら終了。
+14) 実装上の注意
+欠損やファイル不存在で落ちないこと（スキップしログを出す）。
+time の扱い（datetime変換）を確実に行うこと。
+最近傍格子点の選択が毎回同じになるよう、lat/lon座標配列から index を決める処理を関数化すること
