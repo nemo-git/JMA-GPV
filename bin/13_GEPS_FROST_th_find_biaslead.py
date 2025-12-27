@@ -13,8 +13,9 @@ python 13_GEPS_FROST_th_find_biaslead.py \
   --start 2025-04-10 --end 2025-05-20 --var TMP \
   --stndata stations.csv --gepsncdata ../data/GEPS_NC \
   --out-dir out --amd-url /Volumes/Mesh_01/mesh_work/AMD \
-  --bias-mode lead_trim --bias-window-days 90 --bias-min-samples 30 \
-  --ignore-lead0
+  --bias-mode lead_trim --bias-target p10 \
+  --bias-window-days 90 --bias-min-samples 30 \
+  --lead-max 16 --ignore-lead0
 """
 
 from __future__ import annotations
@@ -327,6 +328,7 @@ def collect_bias_samples(
     geps_root: Path,
     var: str,
     amd_cache: AmdCache,
+    bias_target: str,
     bias_lead_max: int | None,
     ignore_lead0: bool,
     indexer_cache: dict[str, dict[str, dict]],
@@ -357,10 +359,17 @@ def collect_bias_samples(
         lat_name = get_coord_name(ds, ["latitude", "lat"])
         lon_name = get_coord_name(ds, ["longitude", "lon"])
         mean_name = f"{var}_mean_daymin"
+        p10_name = f"{var}_p10_daymin"
+        member_name = f"{var}_daymin"
         if mean_name not in ds:
             logger.debug("Bias training missing %s: %s", mean_name, geps_file)
             ds.close()
             continue
+        target_local = bias_target
+        if target_local == "p10" and p10_name not in ds:
+            if member_name not in ds or "ensemble" not in ds[member_name].dims:
+                logger.warning("Bias target p10 unavailable in %s; fallback to mean", geps_file)
+                target_local = "mean"
 
         file_cache = indexer_cache.setdefault(str(geps_file), {})
         lead_max_local = (len(time_index) - 1) if bias_lead_max is None else min(bias_lead_max, len(time_index) - 1)
@@ -378,6 +387,22 @@ def collect_bias_samples(
             mean_da = ds[mean_name].isel(indexer)
             geps_mean = maybe_k_to_c(np.asarray(mean_da.values).astype("float64"))
             geps_mean_s = pd.Series(geps_mean, index=time_index)
+            if target_local == "p10":
+                if p10_name in ds:
+                    p10_da = ds[p10_name].isel(indexer)
+                    geps_train = maybe_k_to_c(np.asarray(p10_da.values).astype("float64"))
+                    geps_train_s = pd.Series(geps_train, index=time_index)
+                else:
+                    try:
+                        member_da = ds[member_name].isel(indexer)
+                        member_vals = maybe_k_to_c(np.asarray(member_da.values).astype("float64"))
+                        geps_train = np.nanpercentile(member_vals, 10, axis=member_da.get_axis_num("ensemble"))
+                        geps_train_s = pd.Series(geps_train, index=time_index)
+                    except Exception as e:
+                        logger.warning("Bias target p10 failed in %s: %s; fallback to mean", geps_file, e)
+                        geps_train_s = geps_mean_s
+            else:
+                geps_train_s = geps_mean_s
 
             try:
                 amd_series = amd_cache.get_series(site, time_index[0], time_index[-1])
@@ -395,7 +420,7 @@ def collect_bias_samples(
                 if lead_max_local is not None and lead_days > lead_max_local:
                     continue
 
-                geps_val = float(geps_mean_s.iloc[idx])
+                geps_val = float(geps_train_s.iloc[idx])
                 amd_val = float(amd_aligned.iloc[idx]) if event_date in amd_aligned.index else float("nan")
                 if not np.isfinite(geps_val) or not np.isfinite(amd_val):
                     continue
@@ -534,6 +559,12 @@ def main(argv: list[str] | None = None) -> int:
         choices=["anchor", "lead_mean", "lead_trim", "lead_qm"],
         help="Bias correction mode",
     )
+    ap.add_argument(
+        "--bias-target",
+        default="mean",
+        choices=["mean", "p10"],
+        help="学習時に誤差を取るGEPS代表値。meanはens_mean_daymin、p10はp10_dayminを使う",
+    )
     ap.add_argument("--bias-window-days", type=int, default=90, help="Training window length (days)")
     ap.add_argument("--bias-min-samples", type=int, default=30, help="Min samples per site/lead")
     ap.add_argument("--bias-trim-rate", type=float, default=0.1, help="Trim rate for lead_trim")
@@ -611,6 +642,8 @@ def main(argv: list[str] | None = None) -> int:
             ds.close()
             current += timedelta(days=1)
             continue
+        p10_name = f"{args.var}_p10_daymin"
+        member_name = f"{args.var}_daymin"
 
         bias_window_days = max(0, int(args.bias_window_days))
         past_init_dates = [current - timedelta(days=i) for i in range(1, bias_window_days + 1)]
@@ -620,6 +653,7 @@ def main(argv: list[str] | None = None) -> int:
             geps_root,
             args.var,
             amd_cache,
+            args.bias_target,
             args.lead_max,
             args.ignore_lead0,
             indexer_cache,
@@ -636,9 +670,10 @@ def main(argv: list[str] | None = None) -> int:
                 if args.no_extra_cols:
                     f.write(base_cols + "\n")
                 else:
-                    f.write(base_cols + ",bias_mode,bias_value,bias_samples\n")
+                    f.write(base_cols + ",bias_mode,bias_value,bias_samples,bias_target\n")
                 header_needed = False
 
+            p10_missing_warned = False
             for site in sites:
                 try:
                     file_cache = indexer_cache.setdefault(str(geps_file), {})
@@ -685,6 +720,23 @@ def main(argv: list[str] | None = None) -> int:
 
                 amd_aligned = amd_series.reindex(time_index)
 
+                target_local = args.bias_target
+                if target_local == "p10" and p10_name not in ds:
+                    if not p10_missing_warned:
+                        logger.warning("Bias target p10 unavailable in %s; fallback to mean", geps_file)
+                        p10_missing_warned = True
+                    target_local = "mean"
+                if target_local == "p10":
+                    try:
+                        p10_da = ds[p10_name].isel(indexer)
+                        geps_train = maybe_k_to_c(np.asarray(p10_da.values).astype("float64"))
+                        geps_train_s = pd.Series(geps_train, index=time_index)
+                    except Exception as e:
+                        logger.warning("Bias target p10 failed in %s: %s; fallback to mean", geps_file, e)
+                        geps_train_s = geps_mean_s
+                else:
+                    geps_train_s = geps_mean_s
+
                 anchor_delta = None
                 if time_index[0] in amd_aligned.index:
                     amd0 = float(amd_aligned.iloc[0])
@@ -705,7 +757,7 @@ def main(argv: list[str] | None = None) -> int:
                         bias_samples_vals.append(0)
                         continue
 
-                    geps_val = float(geps_mean_s.iloc[idx])
+                    geps_val = float(geps_train_s.iloc[idx])
                     bias, samples = resolve_bias_value(
                         args.bias_mode,
                         site.name,
@@ -786,7 +838,7 @@ def main(argv: list[str] | None = None) -> int:
                             samples = int(bias_samples_vals[time_index.get_loc(event_date)])
                             row = (
                                 row
-                                + f",{args.bias_mode},{bias_val:.3f},{samples:d}"
+                                + f",{args.bias_mode},{bias_val:.3f},{samples:d},{args.bias_target}"
                                 + "\n"
                             )
                             f.write(row)
