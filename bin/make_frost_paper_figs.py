@@ -61,8 +61,18 @@ def plot_pzero(pre, post, outdir, lead_max):
         y2 = g["p_zero_post"].values
 
         plt.figure()
-        plt.plot(x, y1, marker="o", label="pre (no bias-corr)")
-        plt.plot(x, y2, marker="o", label="post (lead-mean bias-corr)")
+        plt.plot(
+            x, y1,
+            color="black", linestyle="-", linewidth=1.5,
+            marker="o", markerfacecolor="white",
+            label="pre (no bias-corr)"
+        )
+        plt.plot(
+            x, y2,
+            color="black", linestyle="--", linewidth=1.5,
+            marker="s", markerfacecolor="white",
+            label="post (lead-mean bias-corr)"
+        )
         plt.ylim(-0.02, 1.02)
         plt.xlabel("Lead time (days)")
         plt.ylabel("p_zero = P(percentile = 0 | event=1)")
@@ -85,8 +95,18 @@ def plot_miss_far(post, outdir, lead_max):
         x = g["lead"].values
 
         plt.figure()
-        plt.plot(x, g["miss"].values, marker="o", label="miss (target<=0.05)")
-        plt.plot(x, g["far"].values,  marker="o", label="FAR")
+        plt.plot(
+            x, g["miss"].values,
+            color="black", linestyle="-", linewidth=1.5,
+            marker="o", markerfacecolor="white",
+            label="miss (target<=0.05)"
+        )
+        plt.plot(
+            x, g["far"].values,
+            color="black", linestyle="--", linewidth=1.5,
+            marker="^", markerfacecolor="white",
+            label="FAR"
+        )
         plt.ylim(-0.02, 1.02)
         plt.xlabel("Lead time (days)")
         plt.ylabel("Rate")
@@ -109,16 +129,33 @@ def plot_box_by_lead(post, outdir, leads=(2,10), lead_max=30):
         # 抽出
         groups = []
         labels = []
-        for th in sorted(d["threshold"].dropna().unique()):
+        box_meta = []
+        thresholds = sorted(d["threshold"].dropna().unique())
+        if len(thresholds) == 0:
+            continue
+        shades = np.linspace(0.25, 0.8, len(thresholds))
+        for th_idx, th in enumerate(thresholds):
             for evflag, lab in [(0,"non-event"),(1,"event")]:
                 vals = d[(d["threshold"]==th) & (d["event_flag"]==evflag)]["percentile"].dropna().values
                 if len(vals) == 0:
                     vals = np.array([np.nan])
                 groups.append(vals)
                 labels.append(f"{th}C\n{lab}")
+                box_meta.append({"shade": float(shades[th_idx]), "event": evflag})
 
         plt.figure()
-        plt.boxplot(groups, labels=labels, showfliers=False)
+        bp = plt.boxplot(
+            groups, labels=labels, showfliers=False, patch_artist=True,
+            medianprops={"color":"black"},
+            boxprops={"linewidth":1.0, "color":"black"},
+            whiskerprops={"color":"black"},
+            capprops={"color":"black"}
+        )
+        for box, meta in zip(bp["boxes"], box_meta):
+            shade = meta["shade"]
+            hatch = "//" if meta["event"] == 1 else "xx"
+            box.set_facecolor(str(shade))
+            box.set_hatch(hatch)
         plt.ylabel("percentile (rank)")
         plt.title(f"Fig3  Percentile distributions at lead={lead} (post-correction)")
         plt.grid(True, axis="y", alpha=0.3)
