@@ -14,7 +14,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 DEFAULT_JMADATA = "/Volumes/Mesh_01/jmadata/JMA_month"
 DEFAULT_OUT_ROOT = "/Volumes/Mesh_01/NC_GEPS"
-DEFAULT_VARS = ["TMP", "UGRD", "VGRD", "APCP"]
+# DEFAULT_VARS = ["TMP", "UGRD", "VGRD", "APCP"]
+DEFAULT_VARS = ["RH"]
 
 
 def _parse_date(s: str) -> datetime:
