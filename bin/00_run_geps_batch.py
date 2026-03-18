@@ -5,21 +5,25 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from geps_paths import DEFAULT_JMADATA_ROOT, DEFAULT_OUT_ROOT
 
-DEFAULT_JMADATA = "/Volumes/Mesh_01/jmadata/JMA_month"
-DEFAULT_OUT_ROOT = "/Volumes/Mesh_01/NC_GEPS"
-# DEFAULT_VARS = ["TMP", "UGRD", "VGRD", "APCP"]
-DEFAULT_VARS = ["RH"]
+# Surface elements handled end-to-end by scripts 01-05.
+# WS/WD are derived automatically from UGRD/VGRD in steps 03 and 05.
+DEFAULT_VARS = ["TMP", "RH", "UGRD", "VGRD", "APCP", "PRMSL", "TCDC"]
 
 
 def _parse_date(s: str) -> datetime:
     return datetime.strptime(s, "%Y%m%d")
+
+
+def _today_yyyymmdd() -> str:
+    return date.today().strftime("%Y%m%d")
 
 
 def _date_range(start: datetime, end: datetime):
@@ -78,17 +82,48 @@ def _daily_paths(out_root: Path, yyyymmdd: str):
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Batch runner for GEPS 01-05 scripts.")
-    ap.add_argument("--start", required=True, help="Start date YYYYMMDD")
-    ap.add_argument("--end", required=True, help="End date YYYYMMDD (inclusive)")
-    ap.add_argument("--vars", default=",".join(DEFAULT_VARS), help="Comma-separated vars (default: TMP,UGRD,VGRD,APCP)")
-    ap.add_argument("--jmadata", default=DEFAULT_JMADATA, help=f"Input jmadata root (default: {DEFAULT_JMADATA})")
-    ap.add_argument("--out-root", default=DEFAULT_OUT_ROOT, help=f"Output root (default: {DEFAULT_OUT_ROOT})")
+    ap.add_argument("--date", help="Target date YYYYMMDD (default: today)")
+    ap.add_argument("--start", help="Start date YYYYMMDD")
+    ap.add_argument("--end", help="End date YYYYMMDD (inclusive)")
+    ap.add_argument(
+        "--vars",
+        default=",".join(DEFAULT_VARS),
+        help=(
+            "Comma-separated surface vars "
+            f"(default: {','.join(DEFAULT_VARS)}; WS/WD are derived automatically from UGRD/VGRD)"
+        ),
+    )
+    ap.add_argument(
+        "--jmadata",
+        default=str(DEFAULT_JMADATA_ROOT),
+        help=f"Input jmadata root (default: {DEFAULT_JMADATA_ROOT})",
+    )
+    ap.add_argument(
+        "--out-root",
+        default=str(DEFAULT_OUT_ROOT),
+        help=f"Output root (default: {DEFAULT_OUT_ROOT})",
+    )
     ap.add_argument("--jobs", type=int, default=2, help="Parallel jobs per stage (default: 2)")
     ap.add_argument("--stop-on-error", action="store_true", help="Stop on first error (default: continue)")
     args = ap.parse_args(argv)
 
-    start = _parse_date(args.start)
-    end = _parse_date(args.end)
+    if args.date and (args.start or args.end):
+        print("[ERROR] --date cannot be combined with --start/--end", file=sys.stderr)
+        return 2
+
+    if args.date:
+        start_s = end_s = args.date
+    elif args.start or args.end:
+        if not (args.start and args.end):
+            print("[ERROR] --start and --end must be specified together", file=sys.stderr)
+            return 2
+        start_s = args.start
+        end_s = args.end
+    else:
+        start_s = end_s = _today_yyyymmdd()
+
+    start = _parse_date(start_s)
+    end = _parse_date(end_s)
     if end < start:
         print("[ERROR] end must be >= start", file=sys.stderr)
         return 2

@@ -9,8 +9,11 @@ import numpy as np
 import xarray as xr
 import pygrib
 
+from geps_paths import DEFAULT_JMADATA_ROOT as SHARED_JMADATA_ROOT
+from geps_paths import DEFAULT_OUT_ROOT as SHARED_OUT_ROOT
 
-DEFAULT_DIR = "/Users/nemo/Dropbox/linux_work/JMA_GPV"
+DEFAULT_DIR = str(SHARED_JMADATA_ROOT)
+DEFAULT_OUT_ROOT = str(SHARED_OUT_ROOT)
 
 
 # --------------------- 常量 ---------------------
@@ -785,8 +788,16 @@ def main(argv=None):
 
     ap = argparse.ArgumentParser(description="GEPS Lsurf/L-pall/1m → NetCDF（pygrib, 51/25ens, 1日前/週次/月次）")
     ap.add_argument("--date", required=True, help="基準日 yyyymmdd（1w2w: この1日前12UTC, 1m: 木曜に火/水12UTCを処理）")
-    ap.add_argument("--dir", default=DEFAULT_DIR, help=f"ホームDIR（既定: {DEFAULT_DIR}）")
-    ap.add_argument("--out-root", default=None, help="出力 root（既定: <dir>/data）")
+    ap.add_argument(
+        "--dir",
+        default=DEFAULT_DIR,
+        help=f"入力 root（既定: {DEFAULT_DIR}）",
+    )
+    ap.add_argument(
+        "--out-root",
+        default=DEFAULT_OUT_ROOT,
+        help=f"出力 root（既定: {DEFAULT_OUT_ROOT}）",
+    )
     ap.add_argument("--var", required=True, help="要素（Lsurf: TMP/RH/APCP/TCDC/PRMSL/UGRD/VGRD, L-pall: +HGT/VVEL）または短縮（例 TMP850）")
     ap.add_argument("--hgt", type=int, default=None, help="等圧面 (hPa)。指定時は L-pall を処理（例: 850）")
     ap.add_argument("--debug", action="store_true", help="ログ多め")
@@ -826,7 +837,7 @@ def main(argv=None):
             return 2
 
     base_dir = Path(args.dir)
-    out_root = Path(args.out_root).expanduser().resolve() if args.out_root else base_dir / "data"
+    out_root = Path(args.out_root).expanduser().resolve()
     proc_date = datetime.strptime(args.date, "%Y%m%d")
     is_thursday = (proc_date.weekday() == 3)  # 月=0 ... 木=3
 

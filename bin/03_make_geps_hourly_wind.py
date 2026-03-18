@@ -26,6 +26,8 @@ import warnings
 import numpy as np
 import xarray as xr
 
+from geps_paths import DEFAULT_OUT_ROOT
+
 
 def _find_hourly_file(base_dir: Path, yyyymmdd: str, var: str) -> Path:
     year = yyyymmdd[:4]
@@ -113,8 +115,8 @@ def main(argv=None) -> int:
     p.add_argument("--date", required=True, help="Target date YYYYMMDD (same as hourly output date)")
     p.add_argument(
         "--base",
-        default=str(Path.home() / "Dropbox" / "linux_work" / "JMA_GPV" / "data"),
-        help="Base dir containing GEPS_NC/YYYY/VAR (default: ~/Dropbox/linux_work/JMA_GPV/data)",
+        default=str(DEFAULT_OUT_ROOT),
+        help=f"Base dir containing GEPS_NC/YYYY/VAR (default: {DEFAULT_OUT_ROOT})",
     )
     p.add_argument("--out-dir", default=None, help="Output directory (default: same as hourly input dir)")
     args = p.parse_args(argv)

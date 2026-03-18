@@ -37,6 +37,8 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from geps_paths import DEFAULT_OUT_ROOT
+
 SUPPORTED_VARS = {"TMP", "RH", "UGRD", "VGRD", "PRMSL", "TCDC", "APCP", "HGT", "VVEL"}
 
 
@@ -321,8 +323,8 @@ def main(argv=None) -> int:
     p.add_argument("--var", required=True, help="Variable name (e.g., TMP)")
     p.add_argument(
         "--base",
-        default=str(Path.home() / "Dropbox" / "linux_work" / "JMA_GPV" / "data"),
-        help="Base dir containing GEPS_NC/YYYY/VAR (default: ~/Dropbox/linux_work/JMA_GPV/data)",
+        default=str(DEFAULT_OUT_ROOT),
+        help=f"Base dir containing GEPS_NC/YYYY/VAR (default: {DEFAULT_OUT_ROOT})",
     )
     p.add_argument("--out-dir", default=None, help="Output directory (default: same as input dir)")
     p.add_argument("--method", default="cubic", choices=["cubic", "linear"], help="Interpolation method for each segment (default: cubic; APCP ignores this)")
