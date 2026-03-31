@@ -23,44 +23,44 @@ POINTS = [
 
 VAR_SPECS = {
     "TMP": {
-        "file": "TMP/ENS1M_daily_{date}_TMP.nc",
-        "main": "TMP_mean_daymean",
-        "lower": "TMP_p10_daymean",
-        "upper": "TMP_p90_daymean",
+        "file": "TMP/ENS1M_hourly_{date}_TMP.nc",
+        "main": "TMP_mean",
+        "lower": "TMP_p10",
+        "upper": "TMP_p90",
         "ylabel": "Temperature [K or degC]",
-        "title": "TMP daily mean",
+        "title": "TMP hourly mean",
     },
     "RH": {
-        "file": "RH/ENS1M_daily_{date}_RH.nc",
-        "main": "RH_mean_daymean",
-        "lower": "RH_p10_daymean",
-        "upper": "RH_p90_daymean",
+        "file": "RH/ENS1M_hourly_{date}_RH.nc",
+        "main": "RH_mean",
+        "lower": "RH_p10",
+        "upper": "RH_p90",
         "ylabel": "Relative Humidity [%]",
-        "title": "RH daily mean",
+        "title": "RH hourly mean",
     },
     "APCP": {
-        "file": "APCP/ENS1M_daily_{date}_APCP.nc",
-        "main": "APCP_daysum_mean",
-        "lower": "APCP_daysum_p10",
-        "upper": "APCP_daysum_p90",
-        "ylabel": "Precipitation [mm/day]",
-        "title": "APCP daily sum",
+        "file": "APCP/ENS1M_hourly_{date}_APCP.nc",
+        "main": "APCP_mean",
+        "lower": "APCP_p10",
+        "upper": "APCP_p90",
+        "ylabel": "Precipitation [mm/h]",
+        "title": "APCP hourly mean",
     },
     "WS": {
-        "file": "WS/ENS1M_daily_{date}_WS.nc",
-        "main": "WS_daymean_mean",
-        "lower": "WS_daymean_p10",
-        "upper": "WS_daymean_p90",
+        "file": "WS/ENS1M_hourly_{date}_WS.nc",
+        "main": "WS_mean",
+        "lower": "WS_p10",
+        "upper": "WS_p90",
         "ylabel": "Wind Speed [m/s]",
-        "title": "WS daily mean",
+        "title": "WS hourly mean",
     },
     "WD": {
-        "file": "WD/ENS1M_daily_{date}_WD.nc",
-        "main": "WD_daymean_mean",
-        "lower": "WD_daymean_p10",
-        "upper": "WD_daymean_p90",
+        "file": "WD/ENS1M_hourly_{date}_WD.nc",
+        "main": "WD_mean",
+        "lower": "WD_p10",
+        "upper": "WD_p90",
         "ylabel": "Wind Direction [deg]",
-        "title": "WD daily mean",
+        "title": "WD hourly mean",
     },
 }
 
@@ -86,7 +86,7 @@ def _plot_one_variable(base_dir: Path, date_str: str, var_key: str, out_dir: Pat
     ds = xr.open_dataset(nc_path)
     try:
         times = ds["time"].values
-        fig, axes = plt.subplots(3, 2, figsize=(12, 10), dpi=150, sharex=True)
+        fig, axes = plt.subplots(3, 2, figsize=(15, 10), dpi=150, sharex=True)
         axes = axes.ravel()
 
         for ax, (name, lat, lon) in zip(axes, POINTS):
@@ -95,8 +95,8 @@ def _plot_one_variable(base_dir: Path, date_str: str, var_key: str, out_dir: Pat
             lower = _extract_series(ds, spec["lower"], lat_idx, lon_idx)
             upper = _extract_series(ds, spec["upper"], lat_idx, lon_idx)
 
-            ax.fill_between(times, lower, upper, color="tab:blue", alpha=0.2, label="p10-p90")
-            ax.plot(times, main, color="tab:blue", linewidth=1.8, label="mean")
+            ax.fill_between(times, lower, upper, color="tab:orange", alpha=0.2, label="p10-p90")
+            ax.plot(times, main, color="tab:orange", linewidth=1.2, label="mean")
             ax.set_title(f"{name} ({grid_lat:.2f}, {grid_lon:.2f})", fontsize=10)
             ax.grid(True, alpha=0.3)
             ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d"))
@@ -116,7 +116,7 @@ def _plot_one_variable(base_dir: Path, date_str: str, var_key: str, out_dir: Pat
         fig.tight_layout(rect=(0, 0, 1, 0.96))
 
         out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / f"ENS1M_daily_check_{date_str}_{var_key}.png"
+        out_path = out_dir / f"ENS1M_hourly_check_{date_str}_{var_key}.png"
         fig.savefig(out_path, bbox_inches="tight")
         plt.close(fig)
         return out_path
@@ -125,9 +125,9 @@ def _plot_one_variable(base_dir: Path, date_str: str, var_key: str, out_dir: Pat
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Plot daily ENS1M check charts for selected Japan points.")
+    ap = argparse.ArgumentParser(description="Plot hourly ENS1M check charts for selected Japan points.")
     ap.add_argument("--date", required=True, help="Target date YYYYMMDD")
-    ap.add_argument("--base", default="data/ENS1M", help="Base directory containing ENS1M daily outputs")
+    ap.add_argument("--base", default="data/ENS1M", help="Base directory containing ENS1M hourly outputs")
     ap.add_argument("--out-dir", default="plots/ens1m_check", help="Output directory for PNG files")
     args = ap.parse_args(argv)
 

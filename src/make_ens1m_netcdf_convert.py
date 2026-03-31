@@ -11,6 +11,7 @@ import pygrib
 
 from ens1m_paths import DEFAULT_JMADATA_ROOT as SHARED_JMADATA_ROOT
 from ens1m_paths import DEFAULT_OUT_ROOT as SHARED_OUT_ROOT
+from ens1m_paths import OUTPUT_SUBDIR, output_dir
 
 DEFAULT_DIR = str(SHARED_JMADATA_ROOT)
 DEFAULT_OUT_ROOT = str(SHARED_OUT_ROOT)
@@ -888,7 +889,7 @@ def main(argv=None):
             if not args.dry_run:
                 yyyy = args.date[:4]
                 elem_key = element if not is_upper else f"{element}{lvl}"
-                out_dir = out_root / "ENS1M_NC" / yyyy / elem_key
+                out_dir = output_dir(out_root, yyyy, elem_key)
                 out_nc  = out_dir / f"ENS1M_1w2w_{args.date}_{elem_key}.nc"
                 try:
                     concat_time_and_save(paths, element, out_nc, debug=args.debug, level_hpa=lvl if is_upper else None)
@@ -956,7 +957,7 @@ def main(argv=None):
             # 保存（ENS1M_1m_[yyyymmdd]_[要素].nc）
             yyyy_out = out_date[:4]
             elem_key = element if not is_upper else f"{element}{lvl}"
-            out_dir = out_root / "ENS1M_NC" / yyyy_out / elem_key
+            out_dir = output_dir(out_root, yyyy_out, elem_key)
             out_nc  = out_dir / f"ENS1M_1m_{out_date}_{elem_key}.nc"
 
             try:

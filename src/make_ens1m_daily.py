@@ -35,7 +35,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from ens1m_paths import DEFAULT_OUT_ROOT
+from ens1m_paths import DEFAULT_OUT_ROOT, OUTPUT_SUBDIR, file_candidates, first_existing, output_dir
 
 
 SUPPORTED_VARS = {"TMP", "RH", "UGRD", "VGRD", "PRMSL", "TCDC", "APCP", "HGT", "VVEL"}
@@ -47,13 +47,8 @@ def _normalize_var(v: str) -> str:
 
 def _find_hourly_file(base_dir: Path, yyyymmdd: str, var: str) -> Path:
     year = yyyymmdd[:4]
-    cand_dir = base_dir / "ENS1M_NC" / year / var
-    legacy_dir = base_dir / "GEPS_NC" / year / var
-    candidates = [
-        cand_dir / f"ENS1M_hourly_{yyyymmdd}_{var}.nc",
-        legacy_dir / f"GEPS_hourly_{yyyymmdd}_{var}.nc",
-    ]
-    f = next((p for p in candidates if p.exists()), candidates[0])
+    candidates = file_candidates(base_dir, year, var, f"ENS1M_hourly_{yyyymmdd}_{var}", f"GEPS_hourly_{yyyymmdd}_{var}")
+    f = first_existing(candidates) or candidates[0]
     if not f.exists():
         raise FileNotFoundError(f"hourly file not found: {f}")
     return f
@@ -276,7 +271,7 @@ def main(argv=None) -> int:
     p.add_argument(
         "--base",
         default=str(DEFAULT_OUT_ROOT),
-        help=f"Base dir containing ENS1M_NC/YYYY/VAR (default: {DEFAULT_OUT_ROOT})",
+        help=f"Base dir containing {OUTPUT_SUBDIR}/YYYY/VAR (default: {DEFAULT_OUT_ROOT})",
     )
     p.add_argument("--out-dir", default=None, help="Output directory (default: same as hourly input dir)")
     args = p.parse_args(argv)
@@ -314,7 +309,7 @@ def main(argv=None) -> int:
         else:
             out = _daily_reduce(ds_sel, full_days)
 
-        out_dir = Path(args.out_dir).expanduser().resolve() if args.out_dir else f_hourly.parent
+        out_dir = Path(args.out_dir).expanduser().resolve() if args.out_dir else output_dir(base_dir, yyyymmdd[:4], var)
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / f"ENS1M_daily_{yyyymmdd}_{var}.nc"
 

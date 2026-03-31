@@ -36,7 +36,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from ens1m_paths import DEFAULT_OUT_ROOT
+from ens1m_paths import DEFAULT_OUT_ROOT, OUTPUT_SUBDIR, file_candidates, first_existing, output_dir
 
 SUPPORTED_VARS = {"TMP", "RH", "UGRD", "VGRD", "PRMSL", "TCDC", "APCP", "HGT", "VVEL"}
 
@@ -47,20 +47,12 @@ def _normalize_var(v: str) -> str:
 
 def _find_input_files(base_dir: Path, yyyymmdd: str, var: str) -> tuple[Path, Path | None]:
     year = yyyymmdd[:4]
-    cand_dir = base_dir / "ENS1M_NC" / year / var
-    legacy_dir = base_dir / "GEPS_NC" / year / var
-    candidates_1w2w = [
-        cand_dir / f"ENS1M_1w2w_{yyyymmdd}_{var}.nc",
-        legacy_dir / f"GEPS_1w2w_{yyyymmdd}_{var}.nc",
-    ]
-    candidates_1m = [
-        cand_dir / f"ENS1M_1m_{yyyymmdd}_{var}.nc",
-        legacy_dir / f"GEPS_1m_{yyyymmdd}_{var}.nc",
-    ]
-    f_1w2w = next((p for p in candidates_1w2w if p.exists()), candidates_1w2w[0])
+    candidates_1w2w = file_candidates(base_dir, year, var, f"ENS1M_1w2w_{yyyymmdd}_{var}", f"GEPS_1w2w_{yyyymmdd}_{var}")
+    candidates_1m = file_candidates(base_dir, year, var, f"ENS1M_1m_{yyyymmdd}_{var}", f"GEPS_1m_{yyyymmdd}_{var}")
+    f_1w2w = first_existing(candidates_1w2w) or candidates_1w2w[0]
     if not f_1w2w.exists():
         raise FileNotFoundError(f"1w2w file not found: {f_1w2w}")
-    f_1m = next((p for p in candidates_1m if p.exists()), None)
+    f_1m = first_existing(candidates_1m)
     return f_1w2w, f_1m
 
 
@@ -414,7 +406,7 @@ def main(argv=None) -> int:
     p.add_argument(
         "--base",
         default=str(DEFAULT_OUT_ROOT),
-        help=f"Base dir containing ENS1M_NC/YYYY/VAR (default: {DEFAULT_OUT_ROOT})",
+        help=f"Base dir containing {OUTPUT_SUBDIR}/YYYY/VAR (default: {DEFAULT_OUT_ROOT})",
     )
     p.add_argument("--out-dir", default=None, help="Output directory (default: same as input dir)")
     p.add_argument("--method", default="cubic", choices=["cubic", "linear"], help="Interpolation method for each segment (default: cubic; APCP ignores this)")
@@ -489,7 +481,7 @@ def main(argv=None) -> int:
         "Avoid using it for accumulative variables like APCP."
     )
 
-    out_dir = Path(args.out_dir).expanduser().resolve() if args.out_dir else f_1w2w.parent
+    out_dir = Path(args.out_dir).expanduser().resolve() if args.out_dir else output_dir(base_dir, yyyymmdd[:4], var)
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"ENS1M_hourly_{yyyymmdd}_{var}.nc"
 
