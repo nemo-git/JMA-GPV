@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
 import os
+import re
 import subprocess
 import sys
 import time
@@ -231,48 +232,145 @@ def _find_existing_data_file(out_root: Path, yyyymmdd: str, var: str, kind: str)
     return None
 
 
-def _wait_for_data(out_root: Path, yyyymmdd: str, vars_list: list[str], max_wait_minutes: int = 60) -> bool:
-    """Wait for required data files to be available.
-    
-    Check if all required data files exist, wait if not (max 60 minutes).
-    Checks every 5 minutes.
-    
-    Returns:
-        True if all data files found, False if timeout
+def _fd_key(path: Path) -> tuple[int, int]:
+    m = re.search(r"FD(\d{4})-(\d{4})", path.name)
+    if m:
+        return (int(m.group(1)), int(m.group(2)))
+    return (999999, 999999)
+
+
+def _collect_hits(roots: list[Path], patterns: list[str]) -> list[Path]:
+    hits: list[Path] = []
+    for root in roots:
+        if not root.exists():
+            continue
+        for pat in patterns:
+            hits.extend(sorted(root.glob(pat)))
+    return sorted(set(hits), key=_fd_key)
+
+
+def _weekly_raw_hits(base_dir: Path, run_date_yyyymmdd: str) -> tuple[list[Path], list[Path], str]:
+    target = (_parse_date(run_date_yyyymmdd) - timedelta(days=1)).strftime("%Y%m%d")
+    yyyy_prev = target[:4]
+    patterns = [
+        f"Z__C_*_{target}12*_Lsurf_*_grib2.bin",
+        f"*{target}12*Lsurf*grib2.bin",
+    ]
+    hits_1w = _collect_hits(
+        [
+            base_dir / "jmadata" / "ens_1w" / yyyy_prev,
+            base_dir / "ens_1w" / yyyy_prev,
+            base_dir / "jmadata" / "1wEGPV" / yyyy_prev,
+            base_dir / "1wEGPV" / yyyy_prev,
+        ],
+        patterns,
+    )
+    hits_2w = _collect_hits(
+        [
+            base_dir / "jmadata" / "ens_2w1m" / yyyy_prev,
+            base_dir / "ens_2w1m" / yyyy_prev,
+            base_dir / "jmadata" / "2wEGPV" / yyyy_prev,
+            base_dir / "2wEGPV" / yyyy_prev,
+        ],
+        patterns,
+    )
+    if len(hits_1w) < 2 or len(hits_2w) < 1:
+        fallback_1w: list[Path] = []
+        fallback_2w: list[Path] = []
+        for pat in patterns:
+            for path in base_dir.rglob(pat):
+                sp = str(path)
+                if "ens_1w" in sp or "1wEGPV" in sp:
+                    fallback_1w.append(path)
+                elif "ens_2w1m" in sp or "2wEGPV" in sp:
+                    fallback_2w.append(path)
+        hits_1w = sorted(set(hits_1w) | set(fallback_1w), key=_fd_key)
+        hits_2w = sorted(set(hits_2w) | set(fallback_2w), key=_fd_key)
+    return hits_1w, hits_2w, target
+
+
+def _monthly_raw_hits(base_dir: Path, target_yyyymmdd: str) -> list[Path]:
+    yyyy = target_yyyymmdd[:4]
+    patterns = [
+        f"Z__C_*_{target_yyyymmdd}000000_EPSC_*_Lsurf_*_grib2.bin",
+        f"*{target_yyyymmdd}000000*EPSC*Lsurf*grib2.bin",
+    ]
+    hits = _collect_hits(
+        [
+            base_dir / "jmadata" / "ens_2w1m" / yyyy,
+            base_dir / "jmadata" / "ens_2w1m",
+            base_dir / "ens_2w1m" / yyyy,
+            base_dir / "ens_2w1m",
+            base_dir / "jmadata" / "1mEGPV" / yyyy,
+            base_dir / "1mEGPV" / yyyy,
+        ],
+        patterns,
+    )
+    if not hits:
+        fallback: list[Path] = []
+        for pat in patterns:
+            for path in base_dir.rglob(pat):
+                sp = str(path)
+                if "ens_2w1m" in sp or "1mEGPV" in sp:
+                    fallback.append(path)
+        hits = sorted(set(fallback), key=_fd_key)
+    return hits
+
+
+def _raw_delivery_readiness(run_date_yyyymmdd: str, base_dir: Path) -> tuple[bool, list[str]]:
+    proc_date = _parse_date(run_date_yyyymmdd)
+    hits_1w, hits_2w, prev_day = _weekly_raw_hits(base_dir, run_date_yyyymmdd)
+    ready = len(hits_1w) >= 2 and len(hits_2w) >= 1
+    lines = [
+        f"weekly 1w: {len(hits_1w)}/2 for {prev_day}12UTC Lsurf",
+        f"weekly 2w: {len(hits_2w)}/1 for {prev_day}12UTC Lsurf",
+    ]
+    if proc_date.weekday() == 3:
+        tue = (proc_date - timedelta(days=2)).strftime("%Y%m%d")
+        wed = (proc_date - timedelta(days=1)).strftime("%Y%m%d")
+        hits_tue = _monthly_raw_hits(base_dir, tue)
+        hits_wed = _monthly_raw_hits(base_dir, wed)
+        ready = ready and bool(hits_tue) and bool(hits_wed)
+        lines.extend(
+            [
+                f"monthly 1m: {len(hits_tue)} file(s) for {tue}00UTC Lsurf (EPSC)",
+                f"monthly 1m: {len(hits_wed)} file(s) for {wed}00UTC Lsurf (EPSC)",
+            ]
+        )
+    return ready, lines
+
+
+def _wait_for_data(jmadata_root: Path, yyyymmdd: str, max_wait_minutes: int = 60) -> bool:
+    """Wait for required *raw jmadata delivery* files.
+
+    Ready when previous-day 12UTC weekly Lsurf files are present
+    (1w>=2 and 2w>=1). On Thursdays, monthly 1m files for Tue/Wed are also
+    required.
     """
-    required_files = []
-    for var in vars_list:
-        required_files.extend([
-            ("hourly", var),
-            ("daily", var),
-        ])
-    
     start_time = time.monotonic()
     max_wait_seconds = max_wait_minutes * 60
     check_interval = 300  # 5 minutes
     check_count = 0
-    
+
     while True:
         elapsed = time.monotonic() - start_time
         if elapsed > max_wait_seconds:
             print(f"[TIMEOUT] Waited {max_wait_minutes} minutes for data, giving up", flush=True)
             return False
-        
-        missing_count = 0
-        for kind, var in required_files:
-            if _find_existing_data_file(out_root, yyyymmdd, var, kind) is None:
-                missing_count += 1
-        
-        if missing_count == 0:
-            print(f"[DATA READY] All required data files found after {elapsed:.0f} seconds", flush=True)
+
+        ready, lines = _raw_delivery_readiness(yyyymmdd, jmadata_root)
+        if ready:
+            print(f"[DATA READY] Required raw jmadata files found after {elapsed:.0f} seconds", flush=True)
             return True
-        
+
         check_count += 1
+        summary = " | ".join(lines)
         if check_count == 1:
-            print(f"[WAITING] Required data not ready. Waiting for other processes (missing: {missing_count}/{len(required_files)})", flush=True)
-            update_status(1, f"Waiting for {missing_count} data files")
-        
-        print(f"[WAITING] Check #{check_count}: still waiting for {missing_count} files... (elapsed: {elapsed:.0f}s)", flush=True)
+            print("[WAITING] Required raw jmadata files are not ready yet.", flush=True)
+            print(f"[WAITING] {summary}", flush=True)
+            update_status(1, "Waiting for raw jmadata delivery")
+
+        print(f"[WAITING] Check #{check_count}: {summary} (elapsed: {elapsed:.0f}s)", flush=True)
         time.sleep(min(check_interval, max_wait_seconds - elapsed))
 
 
@@ -544,9 +642,9 @@ def main(argv=None) -> int:
 
             # For today's processing, check if required data is available
             if enable_status:
-                print(f"[CHECK] Waiting for required data files...", flush=True)
-                if not _wait_for_data(out_root, d, vars_list, max_wait_minutes=60):
-                    print(f"[ERROR] Required data files not available after timeout", flush=True)
+                print(f"[CHECK] Waiting for required raw jmadata files...", flush=True)
+                if not _wait_for_data(jmadata, d, max_wait_minutes=60):
+                    print(f"[ERROR] Required raw jmadata files not available after timeout", flush=True)
                     if args.stop_on_error:
                         return 1
                     continue
