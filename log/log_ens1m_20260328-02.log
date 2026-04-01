@@ -1,0 +1,22 @@
+[INFO] log file: /home/nemo/JMA-GPV/log/log_ens1m_20260328-02.log
+[BATCH START] 2026-04-01 17:19:40
+[RANGE] start=20260328 end=20260328
+[DATE] 20260328
+[INFO] memory available=122.00 GiB, memory-aware jobs: heavy_stages=7 general=7
+[INFO] --jobs not specified; auto parallelism is active
+[INFO] stage01 high-memory mode: enabled
+[STAGE START] 2026-04-01 17:19:40 stage=01_make_ens1m_netcdf_convert
+[SUBPROC START] 2026-04-01 17:19:40 01_make_ens1m_netcdf_convert.py date=20260328 var=TMP[SUBPROC START] 2026-04-01 17:19:40 01_make_ens1m_netcdf_convert.py date=20260328 var=RH
+[SUBPROC START] 2026-04-01 17:19:40 01_make_ens1m_netcdf_convert.py date=20260328 var=UGRD
+[SUBPROC START] 2026-04-01 17:19:40 01_make_ens1m_netcdf_convert.py date=20260328 var=PRMSL
+[RUN][SUBPROC START] 2026-04-01 17:19:40 01_make_ens1m_netcdf_convert.py date=20260328 var=APCP
+[SUBPROC START] 2026-04-01 17:19:40 01_make_ens1m_netcdf_convert.py date=20260328 var=TCDC[RUN]
+ [SUBPROC START] 2026-04-01 17:19:40 01_make_ens1m_netcdf_convert.py date=20260328 var=VGRD[RUN]/home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/01_make_ens1m_netcdf_convert.py --date 20260328 --var RH --dir /mnt/e/jmadata --out-root /mnt/e/data --high-memory-mode 
+/home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/01_make_ens1m_netcdf_convert.py --date 20260328 --var TMP --dir /mnt/e/jmadata --out-root /mnt/e/data --high-memory-mode
+
+ 
+/home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/01_make_ens1m_netcdf_convert.py --date 20260328 --var UGRD --dir /mnt/e/jmadata --out-root /mnt/e/data --high-memory-mode[RUN]
+[RUN][RUN][RUN]  /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/01_make_ens1m_netcdf_convert.py --date 20260328 --var APCP --dir /mnt/e/jmadata --out-root /mnt/e/data --high-memory-mode /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/01_make_ens1m_netcdf_convert.py --date 20260328 --var VGRD --dir /mnt/e/jmadata --out-root /mnt/e/data --high-memory-mode
+/home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/01_make_ens1m_netcdf_convert.py --date 20260328 --var TCDC --dir /mnt/e/jmadata --out-root /mnt/e/data --high-memory-mode 
+/home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/01_make_ens1m_netcdf_convert.py --date 20260328 --var PRMSL --dir /mnt/e/jmadata --out-root /mnt/e/data --high-memory-mode
+

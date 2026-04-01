@@ -1,0 +1,116 @@
+[INFO] log file: /home/nemo/JMA-GPV/log/log_ens1m_20260325.log
+[BATCH START] 2026-04-01 14:41:21
+[RANGE] start=20260325 end=20260328
+[DATE] 20260325
+[INFO] memory available=122.02 GiB, memory-aware jobs: heavy_stages=2 general=2
+[INFO] stage01 high-memory mode: enabled
+[STAGE START] 2026-04-01 14:41:21 stage=01_make_ens1m_netcdf_convert
+[SUBPROC START] 2026-04-01 14:41:21 01_make_ens1m_netcdf_convert.py date=20260325 var=TMP[SUBPROC START] 2026-04-01 14:41:21 01_make_ens1m_netcdf_convert.py date=20260325 var=RH
+
+[RUN][RUN]  /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/01_make_ens1m_netcdf_convert.py --date 20260325 --var RH --dir /mnt/e/jmadata --out-root /mnt/e/data --high-memory-mode/home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/01_make_ens1m_netcdf_convert.py --date 20260325 --var TMP --dir /mnt/e/jmadata --out-root /mnt/e/data --high-memory-mode
+
+[SUBPROC END] 2026-04-01 14:44:00 01_make_ens1m_netcdf_convert.py date=20260325 var=RH status=ok elapsed_sec=158.8
+[SUBPROC START] 2026-04-01 14:44:00 01_make_ens1m_netcdf_convert.py date=20260325 var=UGRD
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/01_make_ens1m_netcdf_convert.py --date 20260325 --var UGRD --dir /mnt/e/jmadata --out-root /mnt/e/data --high-memory-mode
+[SUBPROC END] 2026-04-01 14:44:00 01_make_ens1m_netcdf_convert.py date=20260325 var=TMP status=ok elapsed_sec=159.5
+[SUBPROC START] 2026-04-01 14:44:00 01_make_ens1m_netcdf_convert.py date=20260325 var=VGRD
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/01_make_ens1m_netcdf_convert.py --date 20260325 --var VGRD --dir /mnt/e/jmadata --out-root /mnt/e/data --high-memory-mode
+[SUBPROC END] 2026-04-01 14:46:42 01_make_ens1m_netcdf_convert.py date=20260325 var=VGRD status=ok elapsed_sec=162.0
+[SUBPROC START] 2026-04-01 14:46:42 01_make_ens1m_netcdf_convert.py date=20260325 var=APCP
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/01_make_ens1m_netcdf_convert.py --date 20260325 --var APCP --dir /mnt/e/jmadata --out-root /mnt/e/data --high-memory-mode
+[SUBPROC END] 2026-04-01 14:46:43 01_make_ens1m_netcdf_convert.py date=20260325 var=UGRD status=ok elapsed_sec=163.2
+[SUBPROC START] 2026-04-01 14:46:43 01_make_ens1m_netcdf_convert.py date=20260325 var=PRMSL
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/01_make_ens1m_netcdf_convert.py --date 20260325 --var PRMSL --dir /mnt/e/jmadata --out-root /mnt/e/data --high-memory-mode
+[SUBPROC END] 2026-04-01 14:49:20 01_make_ens1m_netcdf_convert.py date=20260325 var=APCP status=ok elapsed_sec=157.7
+[SUBPROC START] 2026-04-01 14:49:20 01_make_ens1m_netcdf_convert.py date=20260325 var=TCDC
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/01_make_ens1m_netcdf_convert.py --date 20260325 --var TCDC --dir /mnt/e/jmadata --out-root /mnt/e/data --high-memory-mode
+[SUBPROC END] 2026-04-01 14:49:22 01_make_ens1m_netcdf_convert.py date=20260325 var=PRMSL status=ok elapsed_sec=159.4
+[SUBPROC END] 2026-04-01 14:51:46 01_make_ens1m_netcdf_convert.py date=20260325 var=TCDC status=ok elapsed_sec=145.5
+[STAGE END] 2026-04-01 14:51:46 stage=01_make_ens1m_netcdf_convert
+[STAGE START] 2026-04-01 14:51:46 stage=02_make_ens1m_hourly
+[SUBPROC START] 2026-04-01 14:51:46 02_make_ens1m_hourly.py date=20260325 var=TMP[SUBPROC START] 2026-04-01 14:51:46 02_make_ens1m_hourly.py date=20260325 var=RH
+
+[RUN][RUN]  /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/02_make_ens1m_hourly.py --date 20260325 --var RH --base /mnt/e/data/home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/02_make_ens1m_hourly.py --date 20260325 --var TMP --base /mnt/e/data
+
+[SUBPROC END] 2026-04-01 14:52:03 02_make_ens1m_hourly.py date=20260325 var=TMP status=ok elapsed_sec=17.3
+[SUBPROC START] 2026-04-01 14:52:03 02_make_ens1m_hourly.py date=20260325 var=UGRD
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/02_make_ens1m_hourly.py --date 20260325 --var UGRD --base /mnt/e/data
+[SUBPROC END] 2026-04-01 14:52:04 02_make_ens1m_hourly.py date=20260325 var=RH status=ok elapsed_sec=18.5
+[SUBPROC START] 2026-04-01 14:52:04 02_make_ens1m_hourly.py date=20260325 var=VGRD
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/02_make_ens1m_hourly.py --date 20260325 --var VGRD --base /mnt/e/data
+[SUBPROC END] 2026-04-01 14:52:22 02_make_ens1m_hourly.py date=20260325 var=UGRD status=ok elapsed_sec=19.4
+[SUBPROC START] 2026-04-01 14:52:22 02_make_ens1m_hourly.py date=20260325 var=APCP
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/02_make_ens1m_hourly.py --date 20260325 --var APCP --base /mnt/e/data
+[SUBPROC END] 2026-04-01 14:52:24 02_make_ens1m_hourly.py date=20260325 var=VGRD status=ok elapsed_sec=20.4
+[SUBPROC START] 2026-04-01 14:52:24 02_make_ens1m_hourly.py date=20260325 var=PRMSL
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/02_make_ens1m_hourly.py --date 20260325 --var PRMSL --base /mnt/e/data
+[SUBPROC END] 2026-04-01 14:52:40 02_make_ens1m_hourly.py date=20260325 var=PRMSL status=ok elapsed_sec=15.6
+[SUBPROC START] 2026-04-01 14:52:40 02_make_ens1m_hourly.py date=20260325 var=TCDC
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/02_make_ens1m_hourly.py --date 20260325 --var TCDC --base /mnt/e/data
+[SUBPROC END] 2026-04-01 14:52:55 02_make_ens1m_hourly.py date=20260325 var=TCDC status=ok elapsed_sec=15.0
+[SUBPROC END] 2026-04-01 14:59:24 02_make_ens1m_hourly.py date=20260325 var=APCP status=ok elapsed_sec=422.1
+[STAGE END] 2026-04-01 14:59:24 stage=02_make_ens1m_hourly
+[STAGE START] 2026-04-01 14:59:24 stage=03_make_ens1m_hourly_wind
+[SUBPROC START] 2026-04-01 14:59:24 03_make_ens1m_hourly_wind.py date=20260325
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/03_make_ens1m_hourly_wind.py --date 20260325 --base /mnt/e/data
+[SUBPROC END] 2026-04-01 15:13:56 03_make_ens1m_hourly_wind.py date=20260325 status=ok elapsed_sec=871.1
+[STAGE END] 2026-04-01 15:13:56 stage=03_make_ens1m_hourly_wind
+[STAGE START] 2026-04-01 15:13:56 stage=04_make_ens1m_daily
+[SUBPROC START] 2026-04-01 15:13:56 04_make_ens1m_daily.py date=20260325 var=TMP[SUBPROC START] 2026-04-01 15:13:56 04_make_ens1m_daily.py date=20260325 var=RH
+
+[RUN][RUN]  /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/04_make_ens1m_daily.py --date 20260325 --var RH --base /mnt/e/data/home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/04_make_ens1m_daily.py --date 20260325 --var TMP --base /mnt/e/data
+
+[SUBPROC END] 2026-04-01 15:14:41 04_make_ens1m_daily.py date=20260325 var=TMP status=ok elapsed_sec=45.7
+[SUBPROC START] 2026-04-01 15:14:41 04_make_ens1m_daily.py date=20260325 var=UGRD
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/04_make_ens1m_daily.py --date 20260325 --var UGRD --base /mnt/e/data
+[SUBPROC END] 2026-04-01 15:14:46 04_make_ens1m_daily.py date=20260325 var=RH status=ok elapsed_sec=50.7
+[SUBPROC START] 2026-04-01 15:14:46 04_make_ens1m_daily.py date=20260325 var=VGRD
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/04_make_ens1m_daily.py --date 20260325 --var VGRD --base /mnt/e/data
+[SUBPROC END] 2026-04-01 15:15:41 04_make_ens1m_daily.py date=20260325 var=UGRD status=ok elapsed_sec=59.7
+[SUBPROC START] 2026-04-01 15:15:41 04_make_ens1m_daily.py date=20260325 var=APCP
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/04_make_ens1m_daily.py --date 20260325 --var APCP --base /mnt/e/data
+[SUBPROC END] 2026-04-01 15:15:46 04_make_ens1m_daily.py date=20260325 var=VGRD status=ok elapsed_sec=59.6
+[SUBPROC START] 2026-04-01 15:15:46 04_make_ens1m_daily.py date=20260325 var=PRMSL
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/04_make_ens1m_daily.py --date 20260325 --var PRMSL --base /mnt/e/data
+[SUBPROC END] 2026-04-01 15:16:05 04_make_ens1m_daily.py date=20260325 var=APCP status=ok elapsed_sec=24.1
+[SUBPROC START] 2026-04-01 15:16:05 04_make_ens1m_daily.py date=20260325 var=TCDC
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/04_make_ens1m_daily.py --date 20260325 --var TCDC --base /mnt/e/data
+[SUBPROC END] 2026-04-01 15:16:27 04_make_ens1m_daily.py date=20260325 var=PRMSL status=ok elapsed_sec=41.3
+[SUBPROC END] 2026-04-01 15:16:57 04_make_ens1m_daily.py date=20260325 var=TCDC status=ok elapsed_sec=51.7
+[STAGE END] 2026-04-01 15:16:57 stage=04_make_ens1m_daily
+[STAGE START] 2026-04-01 15:16:57 stage=05_make_ens1m_daily_wind
+[SUBPROC START] 2026-04-01 15:16:57 05_make_ens1m_daily_wind.py date=20260325
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/05_make_ens1m_daily_wind.py --date 20260325 --base /mnt/e/data
+[SUBPROC END] 2026-04-01 15:17:31 05_make_ens1m_daily_wind.py date=20260325 status=ok elapsed_sec=34.4
+[STAGE END] 2026-04-01 15:17:31 stage=05_make_ens1m_daily_wind
+[STAGE START] 2026-04-01 15:17:31 stage=extend_with_previous_thursday
+[SKIP] extend hourly TMP: missing current or previous-Thursday file
+[SKIP] extend hourly RH: missing current or previous-Thursday file
+[SKIP] extend hourly UGRD: missing current or previous-Thursday file
+[SKIP] extend hourly VGRD: missing current or previous-Thursday file
+[SKIP] extend hourly APCP: missing current or previous-Thursday file
+[SKIP] extend hourly PRMSL: missing current or previous-Thursday file
+[SKIP] extend hourly TCDC: missing current or previous-Thursday file
+[SKIP] extend hourly WS: missing current or previous-Thursday file
+[SKIP] extend hourly WD: missing current or previous-Thursday file
+[SKIP] extend daily TMP: missing current or previous-Thursday file
+[SKIP] extend daily RH: missing current or previous-Thursday file
+[SKIP] extend daily UGRD: missing current or previous-Thursday file
+[SKIP] extend daily VGRD: missing current or previous-Thursday file
+[SKIP] extend daily APCP: missing current or previous-Thursday file
+[SKIP] extend daily PRMSL: missing current or previous-Thursday file
+[SKIP] extend daily TCDC: missing current or previous-Thursday file
+[SKIP] extend daily WS: missing current or previous-Thursday file
+[SKIP] extend daily WD: missing current or previous-Thursday file
+[STAGE END] 2026-04-01 15:17:31 stage=extend_with_previous_thursday
+[STAGE START] 2026-04-01 15:17:31 stage=16_plot_ens1m_daily_check_points
+[SUBPROC START] 2026-04-01 15:17:31 16_plot_ens1m_daily_check_points.py date=20260325
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/16_plot_ens1m_daily_check_points.py --date 20260325 --base /mnt/e/data
+[SUBPROC END] 2026-04-01 15:17:34 16_plot_ens1m_daily_check_points.py date=20260325 status=ok elapsed_sec=2.6
+[STAGE END] 2026-04-01 15:17:34 stage=16_plot_ens1m_daily_check_points
+[STAGE START] 2026-04-01 15:17:34 stage=17_plot_ens1m_hourly_check_points
+[SUBPROC START] 2026-04-01 15:17:34 17_plot_ens1m_hourly_check_points.py date=20260325
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/17_plot_ens1m_hourly_check_points.py --date 20260325 --base /mnt/e/data
+[SUBPROC END] 2026-04-01 15:17:37 17_plot_ens1m_hourly_check_points.py date=20260325 status=ok elapsed_sec=3.3
+[STAGE END] 2026-04-01 15:17:37 stage=17_plot_ens1m_hourly_check_points
+[BATCH END] 2026-04-01 15:17:37 date=20260325 elapsed_sec=2176.2
