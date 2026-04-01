@@ -10,5 +10,6 @@ data
 old
 figures
 plots
+log
 
 environment.yml

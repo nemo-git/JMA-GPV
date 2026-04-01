@@ -8,6 +8,7 @@ import argparse
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
+import os
 import subprocess
 import sys
 import time
@@ -160,6 +161,31 @@ def _heavy_stage_jobs(requested_jobs: int, mem_gib: float | None, disable_auto_j
     if mem_gib < 5.0:
         return 1
     return jobs
+
+
+def _auto_jobs(mem_gib: float | None, vars_count: int) -> int:
+    """Estimate a practical parallelism level for heavy stages."""
+    cpu = os.cpu_count() or 2
+    max_tasks = max(1, vars_count)
+
+    if mem_gib is None:
+        return min(max_tasks, max(2, min(cpu, 6)))
+    if mem_gib >= 128.0:
+        return min(max_tasks, max(8, min(cpu, 16)))
+    if mem_gib >= 64.0:
+        return min(max_tasks, max(6, min(cpu, 12)))
+    if mem_gib >= 32.0:
+        return min(max_tasks, max(4, min(cpu, 8)))
+    if mem_gib >= 8.0:
+        return min(max_tasks, max(2, min(cpu, 4)))
+    return 1
+
+
+def _resolve_jobs(requested_jobs: int | None, mem_gib: float | None, vars_count: int) -> tuple[int, bool]:
+    """Return (base_jobs, auto_selected)."""
+    if requested_jobs is not None:
+        return max(1, int(requested_jobs)), False
+    return _auto_jobs(mem_gib, vars_count), True
 
 
 def _use_high_memory_mode(mem_gib: float | None, disable_auto_high_memory_mode: bool) -> bool:
@@ -386,7 +412,12 @@ def main(argv=None) -> int:
     default_log_dir = str(project_root / "log")
     
     ap.add_argument("--log-dir", default=default_log_dir, help=f"Directory for per-date batch logs (default: {default_log_dir})")
-    ap.add_argument("--jobs", type=int, default=2, help="Parallel jobs per stage (default: 2)")
+    ap.add_argument(
+        "--jobs",
+        type=int,
+        default=None,
+        help="Parallel jobs per stage (default: auto; scales up on high-memory hosts).",
+    )
     ap.add_argument(
         "--disable-auto-jobs",
         action="store_true",
@@ -434,7 +465,8 @@ def main(argv=None) -> int:
     jmadata = Path(args.jmadata).expanduser().resolve()
     log_dir = Path(args.log_dir).expanduser().resolve()
     mem_gib = _mem_available_gib()
-    heavy_jobs = _heavy_stage_jobs(args.jobs, mem_gib, args.disable_auto_jobs)
+    base_jobs, auto_jobs_selected = _resolve_jobs(args.jobs, mem_gib, len(vars_list))
+    heavy_jobs = _heavy_stage_jobs(base_jobs, mem_gib, args.disable_auto_jobs)
     use_high_memory_mode = _use_high_memory_mode(mem_gib, args.disable_auto_high_memory_mode)
 
     s01 = scripts_dir / "01_make_ens1m_netcdf_convert.py"
@@ -493,14 +525,16 @@ def main(argv=None) -> int:
             print(f"[DATE] {d}", flush=True)
             if mem_gib is None:
                 print(
-                    f"[INFO] memory-aware jobs: heavy_stages={heavy_jobs} general={max(1, args.jobs)} (memory probe unavailable)",
+                    f"[INFO] memory-aware jobs: heavy_stages={heavy_jobs} general={base_jobs} (memory probe unavailable)",
                     flush=True,
                 )
             else:
                 print(
-                    f"[INFO] memory available={mem_gib:.2f} GiB, memory-aware jobs: heavy_stages={heavy_jobs} general={max(1, args.jobs)}",
+                    f"[INFO] memory available={mem_gib:.2f} GiB, memory-aware jobs: heavy_stages={heavy_jobs} general={base_jobs}",
                     flush=True,
                 )
+            if auto_jobs_selected:
+                print("[INFO] --jobs not specified; auto parallelism is active", flush=True)
             if args.disable_auto_jobs:
                 print("[INFO] auto job downshift is disabled by --disable-auto-jobs", flush=True)
             print(
