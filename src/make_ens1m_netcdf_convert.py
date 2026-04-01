@@ -110,7 +110,13 @@ def packing_for(element: str, units: str):
             return dict(dtype="int16", scale=0.1, add=0.0, fill=-32767)
     return cfg
 
-def add_ens_summary_vars(ds: xr.Dataset, da_ens: xr.DataArray, base_name: str, debug: bool=False):
+def add_ens_summary_vars(
+    ds: xr.Dataset,
+    da_ens: xr.DataArray,
+    base_name: str,
+    debug: bool = False,
+    fast_quantile: bool = False,
+):
     """Add ensemble summary variables (mean, spread, percentiles) into ds.
 
     Parameters
@@ -143,24 +149,42 @@ def add_ens_summary_vars(ds: xr.Dataset, da_ens: xr.DataArray, base_name: str, d
     da_mean.attrs["description"] = "Ensemble mean"
     da_std.attrs["description"]  = "Ensemble spread (standard deviation, ddof=0)"
 
-    # Percentiles
+    # Percentiles:
+    # - low-memory mode: compute one-by-one (lower peak memory)
+    # - high-memory mode: compute all at once (faster)
     perc_list = [1, 5, 10, 20, 50, 80, 90, 95, 99]
-    qs = [p/100.0 for p in perc_list]
-    try:
-        q_da = da_ens.quantile(qs, dim="ensemble", method="linear")
-    except TypeError:
-        # older xarray
-        q_da = da_ens.quantile(qs, dim="ensemble", interpolation="linear")
-
-    # q_da has dim 'quantile' (values = qs)
-    for p, q in zip(perc_list, qs):
-        vname = f"{base_name}_p{p:02d}"
-        one = q_da.sel(quantile=q, method="nearest").drop_vars("quantile")
-        one.name = vname
-        if units:
-            one.attrs["units"] = units
-        one.attrs["description"] = f"Ensemble percentile {p}%"
-        ds[vname] = one
+    if fast_quantile:
+        qs = [p / 100.0 for p in perc_list]
+        try:
+            q_da = da_ens.quantile(qs, dim="ensemble", method="linear")
+        except TypeError:
+            q_da = da_ens.quantile(qs, dim="ensemble", interpolation="linear")
+        for p, q in zip(perc_list, qs):
+            vname = f"{base_name}_p{p:02d}"
+            one = q_da.sel(quantile=q, method="nearest").drop_vars("quantile")
+            one.name = vname
+            if units:
+                one.attrs["units"] = units
+            one.attrs["description"] = f"Ensemble percentile {p}%"
+            ds[vname] = one
+    else:
+        for p in perc_list:
+            vname = f"{base_name}_p{p:02d}"
+            q = p / 100.0
+            try:
+                one = da_ens.quantile(q, dim="ensemble", method="linear")
+            except TypeError:
+                # older xarray
+                one = da_ens.quantile(q, dim="ensemble", interpolation="linear")
+            if "quantile" in one.coords:
+                one = one.drop_vars("quantile")
+            if "quantile" in one.dims:
+                one = one.squeeze("quantile", drop=True)
+            one.name = vname
+            if units:
+                one.attrs["units"] = units
+            one.attrs["description"] = f"Ensemble percentile {p}%"
+            ds[vname] = one
 
     ds[mean_name] = da_mean
     ds[spr_name]  = da_std
@@ -282,112 +306,235 @@ def _match_lpall_msg(g, element: str, level_hpa: int):
 
 # --------------------- 読み出し（Lsurf / Lpall） ---------------------
 
-def _load_lsurf_element_ens_signed_1dcoords(grib_path: Path, element: str, invert_sign=False, debug=False) -> xr.DataArray:
+def _load_lsurf_element_ens_signed_1dcoords(
+    grib_path: Path,
+    element: str,
+    invert_sign=False,
+    debug=False,
+    high_memory_mode: bool = False,
+) -> xr.DataArray:
     _dbg(debug, f"[READ Lsurf] {grib_path} ({element})")
-    grbs = pygrib.open(str(grib_path))
-    msgs = [g for g in grbs if _match_lsurf_msg(g, element)]
-    if not msgs:
-        if debug:
-            try:
-                grbs.seek(0)  # pygrib では seek(0) が安全
-                src = grbs
-            except Exception:
+    if high_memory_mode:
+        grbs = pygrib.open(str(grib_path))
+        msgs = [g for g in grbs if _match_lsurf_msg(g, element)]
+        if not msgs:
+            if debug:
+                try:
+                    grbs.seek(0)
+                    src = grbs
+                except Exception:
+                    grbs.close()
+                    src = pygrib.open(str(grib_path))
+                cnt = Counter(
+                    (
+                        (getattr(gg, "shortName", "") or "").lower(),
+                        (getattr(gg, "name", "") or "").lower()[:50],
+                        getattr(gg, "typeOfLevel", None),
+                        getattr(gg, "level", None),
+                        getattr(gg, "discipline", None),
+                        getattr(gg, "parameterCategory", None),
+                        getattr(gg, "parameterNumber", None),
+                    )
+                    for gg in src
+                )
+                print(f"[DEBUG] {element}: no hits in {grib_path.name}. Top keys:")
+                for (snm, nm50, tolv, lv, d, c, n), cntv in cnt.most_common(20):
+                    print(f"  {cntv:4d} sn={snm:6s} name={nm50:50s} tol={tolv} lv={lv} code={d}-{c}-{n}")
+                try:
+                    src.close()
+                except Exception:
+                    pass
+            else:
                 grbs.close()
-                src = pygrib.open(str(grib_path))  # 開き直し
+            raise RuntimeError(f"{element}: 対象メッセージが見つかりません: {grib_path}")
+
+        lats2d, lons2d = msgs[0].latlons()
+        ny, nx = lats2d.shape
+        lat1d, lon1d, lat_desc = _to_1d_coords(lats2d, lons2d)
+
+        if element.upper() == "APCP":
+            ts = []
+            for m in msgs:
+                ad = getattr(m, "analDate", None) or getattr(m, "validDate", None)
+                ts.append(ad + timedelta(hours=_apcp_end_hour(m)))
+            times = sorted(set(ts))
+            t_index = {t: i for i, t in enumerate(times)}
+
+            def _ti(m):
+                ad = getattr(m, "analDate", None) or getattr(m, "validDate", None)
+                return t_index[ad + timedelta(hours=_apcp_end_hour(m))]
+        else:
+            times = sorted({m.validDate for m in msgs})
+            t_index = {t: i for i, t in enumerate(times)}
+
+            def _ti(m):
+                return t_index[m.validDate]
+
+        nums = {int(m.number) if m.number is not None else 0 for m in msgs}
+        max_n = max(n for n in nums if 0 <= n <= 100)
+        nt = len(times)
+
+        buf = np.full((nt, max_n + 1, 2, ny, nx), np.nan, dtype=np.float32)
+        seen = defaultdict(int)
+        for m in msgs:
+            ti = _ti(m)
+            n = int(m.number) if m.number is not None else 0
+            if not (0 <= n <= max_n):
+                continue
+            bi = seen[(ti, n)]
+            bi = bi if bi <= 1 else 1
+            arr = m.values.astype(np.float32, copy=False)
+            if arr.shape != (ny, nx):
+                grbs.close()
+                raise RuntimeError(f"{element}: 格子サイズ混在")
+            buf[ti, n, bi] = arr
+            seen[(ti, n)] += 1
+        grbs.close()
+
+        if lat_desc:
+            buf = buf[:, :, :, ::-1, :]
+            lat1d = lat1d[::-1]
+
+        sign_for_branch = np.array([+1, -1], dtype=np.int8)
+        num_signed = np.array(list(range(-max_n, 0)) + [0] + list(range(1, max_n + 1)), dtype=np.int16)
+        out = np.full((nt, len(num_signed), ny, nx), np.nan, dtype=np.float32)
+
+        ctl = buf[:, 0]
+        ctl_merged = np.where(np.isnan(ctl[:, 0]), ctl[:, 1], ctl[:, 0])
+        out[:, np.where(num_signed == 0)[0][0]] = ctl_merged
+
+        for k in range(1, max_n + 1):
+            for bi in (0, 1):
+                signed = sign_for_branch[bi] * k
+                idx = int(np.where(num_signed == signed)[0][0])
+                out[:, idx] = buf[:, k, bi]
+
+        if element.upper() == "APCP":
+            prev = np.zeros_like(out[:1])
+            out = np.diff(out, axis=0, prepend=prev)
+            out[0] = np.nan
+
+        units = getattr(msgs[0], "units", "")
+        name = element.upper()
+        da = xr.DataArray(
+            out,
+            dims=("time", "ensemble", "latitude", "longitude"),
+            coords={
+                "time": np.array(times, dtype="datetime64[ns]"),
+                "ensemble": num_signed.astype(np.int16),
+                "latitude": lat1d,
+                "longitude": lon1d,
+            },
+            name=name,
+            attrs={"units": units, "long_name": msgs[0].name, "standard_name": name.lower()},
+        )
+        return da
+
+    # Pass-1: collect only metadata (times, ensembles, grid)
+    grbs = pygrib.open(str(grib_path))
+    first = None
+    times_set = set()
+    nums = set()
+    for g in grbs:
+        if not _match_lsurf_msg(g, element):
+            continue
+        if first is None:
+            first = g
+        if element.upper() == "APCP":
+            ad = getattr(g, "analDate", None) or getattr(g, "validDate", None)
+            times_set.add(ad + timedelta(hours=_apcp_end_hour(g)))
+        else:
+            times_set.add(g.validDate)
+        n = int(g.number) if g.number is not None else 0
+        if 0 <= n <= 100:
+            nums.add(n)
+    grbs.close()
+
+    if first is None:
+        if debug:
+            src = pygrib.open(str(grib_path))
             cnt = Counter(
                 (
-                    (getattr(gg,"shortName","") or "").lower(),
-                    (getattr(gg,"name","") or "").lower()[:50],
-                    getattr(gg,"typeOfLevel",None),
-                    getattr(gg,"level",None),
-                    getattr(gg,"discipline",None),
-                    getattr(gg,"parameterCategory",None),
-                    getattr(gg,"parameterNumber",None),
+                    (getattr(gg, "shortName", "") or "").lower(),
+                    (getattr(gg, "name", "") or "").lower()[:50],
+                    getattr(gg, "typeOfLevel", None),
+                    getattr(gg, "level", None),
+                    getattr(gg, "discipline", None),
+                    getattr(gg, "parameterCategory", None),
+                    getattr(gg, "parameterNumber", None),
                 )
                 for gg in src
             )
             print(f"[DEBUG] {element}: no hits in {grib_path.name}. Top keys:")
             for (snm, nm50, tolv, lv, d, c, n), cntv in cnt.most_common(20):
                 print(f"  {cntv:4d} sn={snm:6s} name={nm50:50s} tol={tolv} lv={lv} code={d}-{c}-{n}")
-            try:
-                src.close()
-            except Exception:
-                pass
-        else:
-            grbs.close()
+            src.close()
         raise RuntimeError(f"{element}: 対象メッセージが見つかりません: {grib_path}")
 
-
-    # --- 座標 ---
-    lats2d, lons2d = msgs[0].latlons()
+    lats2d, lons2d = first.latlons()
     ny, nx = lats2d.shape
     lat1d, lon1d, lat_desc = _to_1d_coords(lats2d, lons2d)
-
-    # --- 時間 ---
-    if element.upper() == "APCP":
-        ts = []
-        for m in msgs:
-            ad = getattr(m, "analDate", None) or getattr(m, "validDate", None)
-            ts.append(ad + timedelta(hours=_apcp_end_hour(m)))
-        times = sorted(set(ts))
-        t_index = {t:i for i,t in enumerate(times)}
-        def _ti(m): return t_index[(getattr(m,"analDate",None) or getattr(m,"validDate",None)) + timedelta(hours=_apcp_end_hour(m))]
-    else:
-        times = sorted({m.validDate for m in msgs})
-        t_index = {t:i for i,t in enumerate(times)}
-        def _ti(m): return t_index[m.validDate]
-
-    # --- アンサンブル最大番号を自動検出（1m は 12、1w2w は 25 が想定） ---
-    nums = {int(m.number) if m.number is not None else 0 for m in msgs}
-    max_n = max(n for n in nums if 0 <= n <= 100)  # 安全側
+    times = sorted(times_set)
+    t_index = {t: i for i, t in enumerate(times)}
+    max_n = max(nums) if nums else 0
     nt = len(times)
 
-    # バッファ (time, number=0..max_n, branch=0/1, y, x)
-    buf = np.full((nt, max_n+1, 2, ny, nx), np.nan, dtype=np.float32)
+    num_signed = np.array(list(range(-max_n, 0)) + [0] + list(range(1, max_n + 1)), dtype=np.int16)
+    signed_to_idx = {int(v): i for i, v in enumerate(num_signed.tolist())}
+    zero_idx = signed_to_idx[0]
+    out = np.full((nt, len(num_signed), ny, nx), np.nan, dtype=np.float32)
+
+    # Pass-2: fill output directly (avoid duplicate temporary buffer)
+    grbs = pygrib.open(str(grib_path))
     seen = defaultdict(int)
-    for m in msgs:
-        ti = _ti(m)
-        n  = int(m.number) if m.number is not None else 0
-        if not (0 <= n <= max_n): continue
-        bi = seen[(ti, n)];  bi = bi if bi <= 1 else 1
-        arr = m.values.astype(np.float32, copy=False)
+    for g in grbs:
+        if not _match_lsurf_msg(g, element):
+            continue
+        if element.upper() == "APCP":
+            ad = getattr(g, "analDate", None) or getattr(g, "validDate", None)
+            ti = t_index[ad + timedelta(hours=_apcp_end_hour(g))]
+        else:
+            ti = t_index[g.validDate]
+
+        n = int(g.number) if g.number is not None else 0
+        if not (0 <= n <= max_n):
+            continue
+        arr = g.values.astype(np.float32, copy=False)
         if arr.shape != (ny, nx):
-            grbs.close(); raise RuntimeError(f"{element}: 格子サイズ混在")
-        buf[ti, n, bi] = arr
+            grbs.close()
+            raise RuntimeError(f"{element}: 格子サイズ混在")
+
+        bi = seen[(ti, n)]
+        if n == 0:
+            if bi == 0:
+                out[ti, zero_idx] = arr
+            else:
+                cur = out[ti, zero_idx]
+                mask = np.isnan(cur)
+                if mask.any():
+                    cur[mask] = arr[mask]
+                    out[ti, zero_idx] = cur
+        else:
+            if bi > 1:
+                bi = 1
+            signed = n if bi == 0 else -n
+            out[ti, signed_to_idx[signed]] = arr
         seen[(ti, n)] += 1
     grbs.close()
 
     if lat_desc:
-        buf = buf[:, :, :, ::-1, :]
+        out = out[:, :, ::-1, :]
         lat1d = lat1d[::-1]
 
-    # branch→±（branch0=+k, branch1=-k）
-    sign_for_branch = np.array([+1, -1], dtype=np.int8)
-    num_signed = np.array(list(range(-max_n,0)) + [0] + list(range(1,max_n+1)), dtype=np.int16)
-    out = np.full((nt, len(num_signed), ny, nx), np.nan, dtype=np.float32)
-
-    # 制御
-    ctl = buf[:, 0]
-    ctl_merged = np.where(np.isnan(ctl[:,0]), ctl[:,1], ctl[:,0])
-    out[:, np.where(num_signed==0)[0][0]] = ctl_merged
-
-    # 擾乱
-    for k in range(1, max_n+1):
-        for bi in (0,1):
-            signed = sign_for_branch[bi]*k
-            idx = int(np.where(num_signed==signed)[0][0])
-            out[:, idx] = buf[:, k, bi]
-
     if element.upper() == "APCP":
-        # Convert cumulative precip to step-wise increment (difference from previous time).
-        prev = np.zeros_like(out[:1])
-        out = np.diff(out, axis=0, prepend=prev)
-        # The first step can be large due to cumulative base; mark as missing.
+        # Convert cumulative precip to step-wise increment in-place.
+        for i in range(nt - 1, 0, -1):
+            out[i] = out[i] - out[i - 1]
         out[0] = np.nan
 
 
     # 変数名・単位
-    units = getattr(msgs[0], "units", "")
+    units = getattr(first, "units", "")
     name = element.upper()
 
     da = xr.DataArray(
@@ -400,97 +547,204 @@ def _load_lsurf_element_ens_signed_1dcoords(grib_path: Path, element: str, inver
             "longitude": lon1d,
         },
         name=name,
-        attrs={"units": units, "long_name": msgs[0].name, "standard_name": name.lower()},
+        attrs={"units": units, "long_name": first.name, "standard_name": name.lower()},
     )
     return da
 
-def _load_lpall_element_ens_signed_1dcoords(grib_path: Path, element: str, level_hpa: int, debug=False) -> xr.DataArray:
+def _load_lpall_element_ens_signed_1dcoords(
+    grib_path: Path,
+    element: str,
+    level_hpa: int,
+    debug=False,
+    high_memory_mode: bool = False,
+) -> xr.DataArray:
     _dbg(debug, f"[READ Lpall] {grib_path} ({element}@{level_hpa}hPa)")
-    grbs = pygrib.open(str(grib_path))
-    msgs = [g for g in grbs if _match_lpall_msg(g, element, level_hpa)]
-    if not msgs:
-        if debug:
-            try:
-                grbs.seek(0)  # pygrib では seek(0) が安全
-                src = grbs
-            except Exception:
+    if high_memory_mode:
+        grbs = pygrib.open(str(grib_path))
+        msgs = [g for g in grbs if _match_lpall_msg(g, element, level_hpa)]
+        if not msgs:
+            if debug:
+                try:
+                    grbs.seek(0)
+                    src = grbs
+                except Exception:
+                    grbs.close()
+                    src = pygrib.open(str(grib_path))
+                cnt = Counter(
+                    (
+                        (getattr(gg, "shortName", "") or "").lower(),
+                        (getattr(gg, "name", "") or "").lower()[:50],
+                        getattr(gg, "typeOfLevel", None),
+                        getattr(gg, "level", None),
+                        getattr(gg, "discipline", None),
+                        getattr(gg, "parameterCategory", None),
+                        getattr(gg, "parameterNumber", None),
+                    )
+                    for gg in src
+                )
+                print(f"[DEBUG] {element}: no hits in {grib_path.name}. Top keys:")
+                for (snm, nm50, tolv, lv, d, c, n), cntv in cnt.most_common(20):
+                    print(f"  {cntv:4d} sn={snm:6s} name={nm50:50s} tol={tolv} lv={lv} code={d}-{c}-{n}")
+                try:
+                    src.close()
+                except Exception:
+                    pass
+            else:
                 grbs.close()
-                src = pygrib.open(str(grib_path))  # 開き直し
+            raise RuntimeError(f"{element}: 対象メッセージが見つかりません: {grib_path}")
+
+        lats2d, lons2d = msgs[0].latlons()
+        ny, nx = lats2d.shape
+        lat1d, lon1d, lat_desc = _to_1d_coords(lats2d, lons2d)
+
+        times = sorted({m.validDate for m in msgs})
+        t_index = {t: i for i, t in enumerate(times)}
+
+        def _ti(m):
+            return t_index[m.validDate]
+
+        nums = {int(m.number) if m.number is not None else 0 for m in msgs}
+        max_n = max(n for n in nums if 0 <= n <= 100)
+        nt = len(times)
+
+        buf = np.full((nt, max_n + 1, 2, ny, nx), np.nan, dtype=np.float32)
+        seen = defaultdict(int)
+        for m in msgs:
+            ti = _ti(m)
+            n = int(m.number) if m.number is not None else 0
+            if not (0 <= n <= max_n):
+                continue
+            bi = seen[(ti, n)]
+            bi = bi if bi <= 1 else 1
+            arr = m.values.astype(np.float32, copy=False)
+            if arr.shape != (ny, nx):
+                grbs.close()
+                raise RuntimeError(f"{element}: 格子サイズ混在")
+            buf[ti, n, bi] = arr
+            seen[(ti, n)] += 1
+        grbs.close()
+
+        if lat_desc:
+            buf = buf[:, :, :, ::-1, :]
+            lat1d = lat1d[::-1]
+
+        sign_for_branch = np.array([+1, -1], dtype=np.int8)
+        num_signed = np.array(list(range(-max_n, 0)) + [0] + list(range(1, max_n + 1)), dtype=np.int16)
+        out = np.full((nt, len(num_signed), ny, nx), np.nan, dtype=np.float32)
+
+        ctl = buf[:, 0]
+        ctl_merged = np.where(np.isnan(ctl[:, 0]), ctl[:, 1], ctl[:, 0])
+        out[:, np.where(num_signed == 0)[0][0]] = ctl_merged
+
+        for k in range(1, max_n + 1):
+            for bi in (0, 1):
+                signed = sign_for_branch[bi] * k
+                idx = int(np.where(num_signed == signed)[0][0])
+                out[:, idx] = buf[:, k, bi]
+
+        units = getattr(msgs[0], "units", "")
+        name = element.upper()
+        da = xr.DataArray(
+            out,
+            dims=("time", "ensemble", "latitude", "longitude"),
+            coords={
+                "time": np.array(times, dtype="datetime64[ns]"),
+                "ensemble": num_signed.astype(np.int16),
+                "latitude": lat1d,
+                "longitude": lon1d,
+            },
+            name=name,
+            attrs={"units": units, "long_name": f"{msgs[0].name} @ {level_hpa} hPa", "standard_name": name.lower()},
+        )
+        return da
+
+    # Pass-1: collect metadata only
+    grbs = pygrib.open(str(grib_path))
+    first = None
+    times_set = set()
+    nums = set()
+    for g in grbs:
+        if not _match_lpall_msg(g, element, level_hpa):
+            continue
+        if first is None:
+            first = g
+        times_set.add(g.validDate)
+        n = int(g.number) if g.number is not None else 0
+        if 0 <= n <= 100:
+            nums.add(n)
+    grbs.close()
+
+    if first is None:
+        if debug:
+            src = pygrib.open(str(grib_path))
             cnt = Counter(
                 (
-                    (getattr(gg,"shortName","") or "").lower(),
-                    (getattr(gg,"name","") or "").lower()[:50],
-                    getattr(gg,"typeOfLevel",None),
-                    getattr(gg,"level",None),
-                    getattr(gg,"discipline",None),
-                    getattr(gg,"parameterCategory",None),
-                    getattr(gg,"parameterNumber",None),
+                    (getattr(gg, "shortName", "") or "").lower(),
+                    (getattr(gg, "name", "") or "").lower()[:50],
+                    getattr(gg, "typeOfLevel", None),
+                    getattr(gg, "level", None),
+                    getattr(gg, "discipline", None),
+                    getattr(gg, "parameterCategory", None),
+                    getattr(gg, "parameterNumber", None),
                 )
                 for gg in src
             )
             print(f"[DEBUG] {element}: no hits in {grib_path.name}. Top keys:")
             for (snm, nm50, tolv, lv, d, c, n), cntv in cnt.most_common(20):
                 print(f"  {cntv:4d} sn={snm:6s} name={nm50:50s} tol={tolv} lv={lv} code={d}-{c}-{n}")
-            try:
-                src.close()
-            except Exception:
-                pass
-        else:
-            grbs.close()
+            src.close()
         raise RuntimeError(f"{element}: 対象メッセージが見つかりません: {grib_path}")
 
-
-    # --- 座標 ---
-    lats2d, lons2d = msgs[0].latlons()
+    lats2d, lons2d = first.latlons()
     ny, nx = lats2d.shape
     lat1d, lon1d, lat_desc = _to_1d_coords(lats2d, lons2d)
-
-    times = sorted({m.validDate for m in msgs})
-    t_index = {t:i for i,t in enumerate(times)}
-    def _ti(m): return t_index[m.validDate]
-
-    # --- アンサンブル最大番号を自動検出（1m は 12、1w2w は 25 が想定） ---
-    nums = {int(m.number) if m.number is not None else 0 for m in msgs}
-    max_n = max(n for n in nums if 0 <= n <= 100)  # 安全側
+    times = sorted(times_set)
+    t_index = {t: i for i, t in enumerate(times)}
+    max_n = max(nums) if nums else 0
     nt = len(times)
 
-    # バッファ (time, number=0..max_n, branch=0/1, y, x)
-    buf = np.full((nt, max_n+1, 2, ny, nx), np.nan, dtype=np.float32)
+    num_signed = np.array(list(range(-max_n, 0)) + [0] + list(range(1, max_n + 1)), dtype=np.int16)
+    signed_to_idx = {int(v): i for i, v in enumerate(num_signed.tolist())}
+    zero_idx = signed_to_idx[0]
+    out = np.full((nt, len(num_signed), ny, nx), np.nan, dtype=np.float32)
+
+    # Pass-2: fill output directly
+    grbs = pygrib.open(str(grib_path))
     seen = defaultdict(int)
-    for m in msgs:
-        ti = _ti(m)
-        n  = int(m.number) if m.number is not None else 0
-        if not (0 <= n <= max_n): continue
-        bi = seen[(ti, n)];  bi = bi if bi <= 1 else 1
-        arr = m.values.astype(np.float32, copy=False)
+    for g in grbs:
+        if not _match_lpall_msg(g, element, level_hpa):
+            continue
+        ti = t_index[g.validDate]
+        n = int(g.number) if g.number is not None else 0
+        if not (0 <= n <= max_n):
+            continue
+        arr = g.values.astype(np.float32, copy=False)
         if arr.shape != (ny, nx):
-            grbs.close(); raise RuntimeError(f"{element}: 格子サイズ混在")
-        buf[ti, n, bi] = arr
+            grbs.close()
+            raise RuntimeError(f"{element}: 格子サイズ混在")
+        bi = seen[(ti, n)]
+        if n == 0:
+            if bi == 0:
+                out[ti, zero_idx] = arr
+            else:
+                cur = out[ti, zero_idx]
+                mask = np.isnan(cur)
+                if mask.any():
+                    cur[mask] = arr[mask]
+                    out[ti, zero_idx] = cur
+        else:
+            if bi > 1:
+                bi = 1
+            signed = n if bi == 0 else -n
+            out[ti, signed_to_idx[signed]] = arr
         seen[(ti, n)] += 1
     grbs.close()
 
     if lat_desc:
-        buf = buf[:, :, :, ::-1, :]
+        out = out[:, :, ::-1, :]
         lat1d = lat1d[::-1]
 
-    # branch→±（branch0=+k, branch1=-k）
-    sign_for_branch = np.array([+1, -1], dtype=np.int8)
-    num_signed = np.array(list(range(-max_n,0)) + [0] + list(range(1,max_n+1)), dtype=np.int16)
-    out = np.full((nt, len(num_signed), ny, nx), np.nan, dtype=np.float32)
-
-    # 制御
-    ctl = buf[:, 0]
-    ctl_merged = np.where(np.isnan(ctl[:,0]), ctl[:,1], ctl[:,0])
-    out[:, np.where(num_signed==0)[0][0]] = ctl_merged
-
-    # 擾乱
-    for k in range(1, max_n+1):
-        for bi in (0,1):
-            signed = sign_for_branch[bi]*k
-            idx = int(np.where(num_signed==signed)[0][0])
-            out[:, idx] = buf[:, k, bi]
-
-    units = getattr(msgs[0], "units", "")
+    units = getattr(first, "units", "")
     name = element.upper()
 
     da = xr.DataArray(
@@ -503,7 +757,7 @@ def _load_lpall_element_ens_signed_1dcoords(grib_path: Path, element: str, level
             "longitude": lon1d,
         },
         name=name,
-        attrs={"units": units, "long_name": f"{msgs[0].name} @ {level_hpa} hPa", "standard_name": name.lower()},
+        attrs={"units": units, "long_name": f"{first.name} @ {level_hpa} hPa", "standard_name": name.lower()},
     )
     return da
 
@@ -654,12 +908,36 @@ def _find_monthly_paths_for_date(base_dir: Path, target_yyyymmdd: str, is_upper:
 
 # --------------------- 連結 & 保存 ---------------------
 
-def concat_time_and_save(paths, element: str, out_path: Path, debug=False, level_hpa: int|None=None):
+def concat_time_and_save(
+    paths,
+    element: str,
+    out_path: Path,
+    debug=False,
+    level_hpa: int | None = None,
+    high_memory_mode: bool = False,
+):
     # 読み込み
     if level_hpa is None:
-        loaders = [_load_lsurf_element_ens_signed_1dcoords(p, element, debug=debug) for p in paths]
+        loaders = [
+            _load_lsurf_element_ens_signed_1dcoords(
+                p,
+                element,
+                debug=debug,
+                high_memory_mode=high_memory_mode,
+            )
+            for p in paths
+        ]
     else:
-        loaders = [_load_lpall_element_ens_signed_1dcoords(p, element, level_hpa, debug=debug) for p in paths]
+        loaders = [
+            _load_lpall_element_ens_signed_1dcoords(
+                p,
+                element,
+                level_hpa,
+                debug=debug,
+                high_memory_mode=high_memory_mode,
+            )
+            for p in paths
+        ]
 
     # 座標互換チェック
     lat0 = loaders[0].coords["latitude"].values
@@ -688,7 +966,7 @@ def concat_time_and_save(paths, element: str, out_path: Path, debug=False, level
     varname = element.upper() if level_hpa is None else f"{element.upper()}{int(level_hpa)}"
     ds = xr.Dataset({varname: da_all})
     # ---- Add ensemble summary variables ----
-    ds = add_ens_summary_vars(ds, da_all, varname, debug=debug)
+    ds = add_ens_summary_vars(ds, da_all, varname, debug=debug, fast_quantile=high_memory_mode)
 
     units = str(da_all.attrs.get("units", ""))
 
@@ -723,7 +1001,14 @@ def concat_time_and_save(paths, element: str, out_path: Path, debug=False, level
 # --------------------- CLI ---------------------
 
 
-def concat_time_and_save_from_das(das, element: str, out_path: Path, debug=False, level_hpa: int|None=None):
+def concat_time_and_save_from_das(
+    das,
+    element: str,
+    out_path: Path,
+    debug=False,
+    level_hpa: int | None = None,
+    high_memory_mode: bool = False,
+):
     """Concat already-loaded DataArrays (each containing a subset of time) and save to NetCDF.
 
     Used for 1m processing where GRIB is split into multiple parts and we already loaded them.
@@ -774,7 +1059,7 @@ def concat_time_and_save_from_das(das, element: str, out_path: Path, debug=False
     ds = xr.Dataset({varname: da_all})
 
     # Add ensemble summary variables
-    ds = add_ens_summary_vars(ds, da_all, varname, debug=debug)
+    ds = add_ens_summary_vars(ds, da_all, varname, debug=debug, fast_quantile=high_memory_mode)
 
     # Packing / encoding
     units = str(da_all.attrs.get("units", ""))
@@ -825,6 +1110,11 @@ def main(argv=None):
     ap.add_argument("--dry-run", action="store_true", help="保存せず読み込み・検証のみ")
     ap.add_argument("--skip-monthly", action="store_true", help="monthly 処理をスキップ")
     ap.add_argument("--only-monthly", action="store_true", help="monthly のみ処理（1w2wはスキップ）")
+    ap.add_argument(
+        "--high-memory-mode",
+        action="store_true",
+        help="Use faster high-memory path (single-pass message list + batch quantile).",
+    )
     args = ap.parse_args(argv)
 
     # 例: --var TMP850 / HGT500 → var=TMP/HGT, hgt=850/500 として扱う（--hgt 明示が優先）
@@ -861,6 +1151,7 @@ def main(argv=None):
     out_root = Path(args.out_root).expanduser().resolve()
     proc_date = datetime.strptime(args.date, "%Y%m%d")
     is_thursday = (proc_date.weekday() == 3)  # 月=0 ... 木=3
+    high_memory_mode = args.high_memory_mode
 
     # ------------------ 1w + 2w 処理（必要なら） ------------------
     if not args.only_monthly:
@@ -877,10 +1168,21 @@ def main(argv=None):
             try:
                 if is_upper:
                     for p in paths:
-                        _ = _load_lpall_element_ens_signed_1dcoords(p, element, lvl, debug=args.debug)
+                        _ = _load_lpall_element_ens_signed_1dcoords(
+                            p,
+                            element,
+                            lvl,
+                            debug=args.debug,
+                            high_memory_mode=high_memory_mode,
+                        )
                 else:
                     for p in paths:
-                        _ = _load_lsurf_element_ens_signed_1dcoords(p, element, debug=args.debug)
+                        _ = _load_lsurf_element_ens_signed_1dcoords(
+                            p,
+                            element,
+                            debug=args.debug,
+                            high_memory_mode=high_memory_mode,
+                        )
                 print(f"[INFO] 読み込み検証 OK ({element}{'' if not is_upper else f'@{lvl}'})")
             except Exception as e:
                 print("[ERROR] 1w2w 読み込み中に失敗:", e, file=sys.stderr)
@@ -892,7 +1194,14 @@ def main(argv=None):
                 out_dir = output_dir(out_root, yyyy, elem_key)
                 out_nc  = out_dir / f"ENS1M_1w2w_{args.date}_{elem_key}.nc"
                 try:
-                    concat_time_and_save(paths, element, out_nc, debug=args.debug, level_hpa=lvl if is_upper else None)
+                    concat_time_and_save(
+                        paths,
+                        element,
+                        out_nc,
+                        debug=args.debug,
+                        level_hpa=lvl if is_upper else None,
+                        high_memory_mode=high_memory_mode,
+                    )
                     print(f"[DONE] {out_nc}")
                 except Exception as e:
                     print("[ERROR] 1w2w 保存時に失敗:", e, file=sys.stderr)
@@ -930,7 +1239,13 @@ def main(argv=None):
             if is_upper:
                 for p in paths_1m:
                     try:
-                        da = _load_lpall_element_ens_signed_1dcoords(p, element, lvl, debug=args.debug)
+                        da = _load_lpall_element_ens_signed_1dcoords(
+                            p,
+                            element,
+                            lvl,
+                            debug=args.debug,
+                            high_memory_mode=high_memory_mode,
+                        )
                         das.append(da)
                     except RuntimeError as e:
                         if "対象メッセージが見つかりません" in str(e):
@@ -940,7 +1255,12 @@ def main(argv=None):
             else:
                 for p in paths_1m:
                     try:
-                        da = _load_lsurf_element_ens_signed_1dcoords(p, element, debug=args.debug)
+                        da = _load_lsurf_element_ens_signed_1dcoords(
+                            p,
+                            element,
+                            debug=args.debug,
+                            high_memory_mode=high_memory_mode,
+                        )
                         das.append(da)
                     except RuntimeError as e:
                         if "対象メッセージが見つかりません" in str(e):
@@ -961,7 +1281,13 @@ def main(argv=None):
             out_nc  = out_dir / f"ENS1M_1m_{out_date}_{elem_key}.nc"
 
             try:
-                concat_time_and_save_from_das(das, element, out_nc, debug=args.debug)
+                concat_time_and_save_from_das(
+                    das,
+                    element,
+                    out_nc,
+                    debug=args.debug,
+                    high_memory_mode=high_memory_mode,
+                )
                 print(f"[DONE] monthly {tgt} → {out_nc}")
             except Exception as e:
                 print(f"[ERROR] monthly 保存時に失敗 ({tgt}):", e, file=sys.stderr)

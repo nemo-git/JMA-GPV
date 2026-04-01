@@ -3,6 +3,9 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import matplotlib
 matplotlib.use("Agg")
@@ -10,6 +13,8 @@ import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
 import xarray as xr
+
+from ens1m_paths import output_dir, file_candidates, first_existing
 
 
 POINTS = [
@@ -80,9 +85,18 @@ def _extract_series(ds: xr.Dataset, varname: str, lat_idx: int, lon_idx: int) ->
     return np.asarray(da.values, dtype="float64")
 
 
-def _plot_one_variable(base_dir: Path, date_str: str, var_key: str, out_dir: Path) -> Path:
+def _plot_one_variable(base_dir: Path, date_str: str, var_key: str, out_dir: Path) -> Path | None:
     spec = VAR_SPECS[var_key]
-    nc_path = base_dir / date_str[:4] / spec["file"].format(date=date_str)
+    year = date_str[:4]
+    
+    # Find the actual file using ens1m_paths logic
+    candidates = file_candidates(base_dir, year, var_key, f"ENS1M_hourly_{date_str}_{var_key}", f"GEPS_hourly_{date_str}_{var_key}")
+    nc_path = first_existing(candidates)
+    
+    if nc_path is None:
+        print(f"[SKIP] hourly {var_key}: file not found (tried {len(candidates)} candidates)", flush=True)
+        return None
+    
     ds = xr.open_dataset(nc_path)
     try:
         times = ds["time"].values
@@ -136,7 +150,8 @@ def main(argv: list[str] | None = None) -> int:
 
     for var_key in ["TMP", "RH", "APCP", "WS", "WD"]:
         out_path = _plot_one_variable(base_dir, args.date, var_key, out_dir)
-        print(f"[DONE] {out_path}")
+        if out_path is not None:
+            print(f"[DONE] {out_path}", flush=True)
 
     return 0
 

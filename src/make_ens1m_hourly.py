@@ -245,15 +245,17 @@ def _add_ens_summary_vars(ds: xr.Dataset, varname: str) -> xr.Dataset:
     da_std.attrs["description"] = "Ensemble spread (standard deviation, ddof=0)"
 
     perc_list = [1, 5, 10, 20, 50, 80, 90, 95, 99]
-    qs = [p / 100.0 for p in perc_list]
-    try:
-        q_da = da_ens.quantile(qs, dim="ensemble", method="linear")
-    except TypeError:
-        q_da = da_ens.quantile(qs, dim="ensemble", interpolation="linear")
-
-    for p, q in zip(perc_list, qs):
+    for p in perc_list:
         vname = f"{varname}_p{p:02d}"
-        one = q_da.sel(quantile=q, method="nearest").drop_vars("quantile")
+        q = p / 100.0
+        try:
+            one = da_ens.quantile(q, dim="ensemble", method="linear")
+        except TypeError:
+            one = da_ens.quantile(q, dim="ensemble", interpolation="linear")
+        if "quantile" in one.coords:
+            one = one.drop_vars("quantile")
+        if "quantile" in one.dims:
+            one = one.squeeze("quantile", drop=True)
         one.name = vname
         if units:
             one.attrs["units"] = units

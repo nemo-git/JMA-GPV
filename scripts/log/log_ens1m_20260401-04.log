@@ -1,0 +1,14 @@
+[INFO] log file: /home/nemo/JMA-GPV/scripts/log/log_ens1m_20260401-04.log
+[BATCH START] 2026-04-01 09:47:56
+[DATE] 20260401
+[STAGE START] 2026-04-01 09:47:56 stage=16_plot_ens1m_daily_check_points
+[SUBPROC START] 2026-04-01 09:47:56 16_plot_ens1m_daily_check_points.py date=20260401
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/16_plot_ens1m_daily_check_points.py --date 20260401 --base /mnt/e/data
+[SUBPROC END] 2026-04-01 09:47:56 16_plot_ens1m_daily_check_points.py date=20260401 status=ok elapsed_sec=0.5
+[STAGE END] 2026-04-01 09:47:56 stage=16_plot_ens1m_daily_check_points
+[STAGE START] 2026-04-01 09:47:56 stage=17_plot_ens1m_hourly_check_points
+[SUBPROC START] 2026-04-01 09:47:56 17_plot_ens1m_hourly_check_points.py date=20260401
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/17_plot_ens1m_hourly_check_points.py --date 20260401 --base /mnt/e/data
+[SUBPROC END] 2026-04-01 09:47:57 17_plot_ens1m_hourly_check_points.py date=20260401 status=ok elapsed_sec=0.4
+[STAGE END] 2026-04-01 09:47:57 stage=17_plot_ens1m_hourly_check_points
+[BATCH END] 2026-04-01 09:47:57 date=20260401 elapsed_sec=0.9

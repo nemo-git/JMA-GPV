@@ -1,0 +1,17 @@
+[INFO] log file: /home/nemo/JMA-GPV/scripts/log/log_ens1m_20260401-02.log
+[BATCH START] 2026-04-01 09:43:42
+[RANGE] start=20260401 end=20260401
+[DATE] 20260401
+[STAGE START] 2026-04-01 09:43:42 stage=01_make_ens1m_netcdf_convert
+[SUBPROC START] 2026-04-01 09:43:42 01_make_ens1m_netcdf_convert.py date=20260401 var=TMP[SUBPROC START] 2026-04-01 09:43:42 01_make_ens1m_netcdf_convert.py date=20260401 var=RH
+
+[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/01_make_ens1m_netcdf_convert.py --date 20260401 --var TMP --dir /mnt/e/jmadata --out-root /mnt/e/data[RUN]
+ /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/01_make_ens1m_netcdf_convert.py --date 20260401 --var RH --dir /mnt/e/jmadata --out-root /mnt/e/data
+[SUBPROC END] 2026-04-01 09:44:36 01_make_ens1m_netcdf_convert.py date=20260401 var=TMP status=error exit=-2 elapsed_sec=54.8[SUBPROC END] 2026-04-01 09:44:36 01_make_ens1m_netcdf_convert.py date=20260401 var=RH status=error exit=-2 elapsed_sec=54.8
+
+[ERROR] exit=-2: /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/01_make_ens1m_netcdf_convert.py --date 20260401 --var TMP --dir /mnt/e/jmadata --out-root /mnt/e/data
+[SUBPROC START] 2026-04-01 09:44:36 01_make_ens1m_netcdf_convert.py date=20260401 var=UGRD[ERROR] exit=-2: /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/01_make_ens1m_netcdf_convert.py --date 20260401 --var RH --dir /mnt/e/jmadata --out-root /mnt/e/data
+
+[RUN][SUBPROC START] 2026-04-01 09:44:36 01_make_ens1m_netcdf_convert.py date=20260401 var=VGRD 
+/home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/01_make_ens1m_netcdf_convert.py --date 20260401 --var UGRD --dir /mnt/e/jmadata --out-root /mnt/e/data[RUN] /home/nemo/miniforge3/envs/geps/bin/python /home/nemo/JMA-GPV/scripts/01_make_ens1m_netcdf_convert.py --date 20260401 --var VGRD --dir /mnt/e/jmadata --out-root /mnt/e/data
+
