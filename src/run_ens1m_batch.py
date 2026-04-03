@@ -616,6 +616,7 @@ def main(argv=None) -> int:
     for d in _date_range(start, end):
         log_path = _next_log_path(log_dir, d)
         with _date_log_context(log_path):
+            date_had_error = False
             batch_started_at = time.monotonic()
             print(f"[INFO] log file: {log_path}", flush=True)
             print(f"[BATCH START] {_now_str()}", flush=True)
@@ -645,6 +646,8 @@ def main(argv=None) -> int:
                 print(f"[CHECK] Waiting for required raw jmadata files...", flush=True)
                 if not _wait_for_data(jmadata, d, max_wait_minutes=60):
                     print(f"[ERROR] Required raw jmadata files not available after timeout", flush=True)
+                    date_had_error = True
+                    update_status(-1, "Required raw jmadata files not available after timeout")
                     if args.stop_on_error:
                         return 1
                     continue
@@ -671,7 +674,8 @@ def main(argv=None) -> int:
                 )
                 if use_high_memory_mode:
                     cmds[-1].append("--high-memory-mode")
-            _run_parallel(cmds, heavy_jobs, args.stop_on_error)
+            if not _run_parallel(cmds, heavy_jobs, args.stop_on_error):
+                date_had_error = True
             print(f"[STAGE END] {_now_str()} stage=01_make_ens1m_netcdf_convert", flush=True)
 
             # 02: hourly
@@ -690,17 +694,19 @@ def main(argv=None) -> int:
                         str(out_root),
                     ]
                 )
-            _run_parallel(cmds, heavy_jobs, args.stop_on_error)
+            if not _run_parallel(cmds, heavy_jobs, args.stop_on_error):
+                date_had_error = True
             print(f"[STAGE END] {_now_str()} stage=02_make_ens1m_hourly", flush=True)
 
             # 03: hourly wind (WS/WD)
             print(f"[STAGE START] {_now_str()} stage=03_make_ens1m_hourly_wind", flush=True)
             u_path, v_path = _hourly_paths(out_root, d)
             if u_path.exists() and v_path.exists():
-                _run(
+                if not _run(
                     [py, str(s03), "--date", d, "--base", str(out_root)],
                     args.stop_on_error,
-                )
+                ):
+                    date_had_error = True
             else:
                 print(f"[SKIP] hourly wind missing U/V for {d}", flush=True)
             print(f"[STAGE END] {_now_str()} stage=03_make_ens1m_hourly_wind", flush=True)
@@ -721,17 +727,19 @@ def main(argv=None) -> int:
                         str(out_root),
                     ]
                 )
-            _run_parallel(cmds, heavy_jobs, args.stop_on_error)
+            if not _run_parallel(cmds, heavy_jobs, args.stop_on_error):
+                date_had_error = True
             print(f"[STAGE END] {_now_str()} stage=04_make_ens1m_daily", flush=True)
 
             # 05: daily wind (WS/WD)
             print(f"[STAGE START] {_now_str()} stage=05_make_ens1m_daily_wind", flush=True)
             u_path, v_path = _daily_paths(out_root, d)
             if u_path.exists() and v_path.exists():
-                _run(
+                if not _run(
                     [py, str(s05), "--date", d, "--base", str(out_root)],
                     args.stop_on_error,
-                )
+                ):
+                    date_had_error = True
             else:
                 print(f"[SKIP] daily wind missing U/V for {d}", flush=True)
             print(f"[STAGE END] {_now_str()} stage=05_make_ens1m_daily_wind", flush=True)
@@ -741,28 +749,33 @@ def main(argv=None) -> int:
             print(f"[STAGE END] {_now_str()} stage=extend_with_previous_thursday", flush=True)
 
             # Update status before plotting
-            if enable_status:
+            if enable_status and not date_had_error:
                 update_status(3, "Data processing completed, generating check plots")
 
             # 16: daily check plot
             print(f"[STAGE START] {_now_str()} stage=16_plot_ens1m_daily_check_points", flush=True)
-            _run(
+            if not _run(
                 [py, str(s16), "--date", d, "--base", str(out_root)],
                 args.stop_on_error,
-            )
+            ):
+                date_had_error = True
             print(f"[STAGE END] {_now_str()} stage=16_plot_ens1m_daily_check_points", flush=True)
 
             # 17: hourly check plot
             print(f"[STAGE START] {_now_str()} stage=17_plot_ens1m_hourly_check_points", flush=True)
-            _run(
+            if not _run(
                 [py, str(s17), "--date", d, "--base", str(out_root)],
                 args.stop_on_error,
-            )
+            ):
+                date_had_error = True
             print(f"[STAGE END] {_now_str()} stage=17_plot_ens1m_hourly_check_points", flush=True)
 
             # Update status - all processing completed
             if enable_status:
-                update_status(4, "All processing completed successfully")
+                if date_had_error:
+                    update_status(-1, "Batch completed with errors")
+                else:
+                    update_status(4, "All processing completed successfully")
 
             print(f"[BATCH END] {_now_str()} date={d} elapsed_sec={time.monotonic() - batch_started_at:.1f}", flush=True)
 

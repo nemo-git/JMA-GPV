@@ -3,6 +3,7 @@
 """Status file manager for ENS1M batch processing.
 
 Status values:
+  -1: Error occurred during batch processing
   0: Before processing (set at midnight via cron)
   1: Batch started but required data not available yet
   2: Required data available, conversion in progress
@@ -18,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-StatusCode = Literal[0, 1, 2, 3, 4]
+StatusCode = Literal[-1, 0, 1, 2, 3, 4]
 STATUS_FILENAME = "ens1m_status.json"
 LEGACY_STATUS_FILENAME = "ens1m_status"
 
@@ -48,7 +49,7 @@ def update_status(status: StatusCode, message: str = "") -> None:
     """Update the status file with current status and timestamp.
     
     Args:
-        status: Status code (0-4)
+        status: Status code (-1, 0-4)
         message: Optional message to include
     """
     status_path = _get_status_file_path()
