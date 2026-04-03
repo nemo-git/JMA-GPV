@@ -5,7 +5,7 @@
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 STATUS_LINK="$PROJECT_ROOT/status"
-TARGET_STATUS_FILE="/var/www/html/status/ens1m_status"
+TARGET_STATUS_FILE="/var/www/html/status/ens1m_status.json"
 
 echo "Setting up status directory symlink for ENS1M batch processing..."
 echo "  Project root: $PROJECT_ROOT"
@@ -43,7 +43,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-status_file = Path('$STATUS_LINK') / 'ens1m_status'
+status_file = Path('$STATUS_LINK') / 'ens1m_status.json'
 status_data = {
     'status': 0,
     'datetime': datetime.now().isoformat(),

@@ -11,5 +11,6 @@ old
 figures
 plots
 log
+status/
 
 environment.yml

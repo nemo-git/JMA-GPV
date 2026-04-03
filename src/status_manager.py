@@ -19,22 +19,24 @@ from pathlib import Path
 from typing import Literal
 
 StatusCode = Literal[0, 1, 2, 3, 4]
+STATUS_FILENAME = "ens1m_status.json"
+LEGACY_STATUS_FILENAME = "ens1m_status"
 
 
 def _get_status_file_path() -> Path:
     """Determine status file path based on environment.
     
-    Development: JMA-GPV/status/ens1m_status (symlink to /var/www/html/status/ens1m_status)
-    Production: /var/www/html/status/ens1m_status
+    Development: JMA-GPV/status/ens1m_status.json
+    Production: /var/www/html/status/ens1m_status.json
     """
     # Check if we're in production environment
-    prod_status_path = Path("/var/www/html/status/ens1m_status")
+    prod_status_path = Path("/var/www/html/status") / STATUS_FILENAME
     if prod_status_path.exists() or os.access(prod_status_path.parent, os.W_OK):
         return prod_status_path
     
     # Development environment: use symlink under JMA-GPV
     project_root = Path(__file__).resolve().parents[1]
-    status_link = project_root / "status" / "ens1m_status"
+    status_link = project_root / "status" / STATUS_FILENAME
     
     # Ensure directory exists
     status_link.parent.mkdir(parents=True, exist_ok=True)
@@ -77,11 +79,13 @@ def read_status() -> dict | None:
     """
     status_path = _get_status_file_path()
     
-    if not status_path.exists():
+    legacy_path = status_path.with_name(LEGACY_STATUS_FILENAME)
+    target_path = status_path if status_path.exists() else legacy_path
+    if not target_path.exists():
         return None
     
     try:
-        with open(status_path, "r", encoding="utf-8") as f:
+        with open(target_path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as e:
         print(f"[WARNING] Failed to read status file: {e}", flush=True)
