@@ -21,8 +21,8 @@ import xarray as xr
 from ens1m_paths import DEFAULT_JMADATA_ROOT, DEFAULT_OUT_ROOT, file_candidates, output_dir
 from status_manager import update_status, read_status
 
-# Surface elements handled end-to-end by scripts 01-05.
-# WS/WD are derived automatically from UGRD/VGRD in steps 03 and 05.
+# Surface elements handled end-to-end by scripts 01-06.
+# WS/WD are derived from UGRD/VGRD; GSR is derived from daily TCDC.
 DEFAULT_VARS = ["TMP", "RH", "UGRD", "VGRD", "APCP", "PRMSL", "TCDC"]
 
 
@@ -482,7 +482,7 @@ def _daily_paths(out_root: Path, yyyymmdd: str):
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Batch runner for ENS1M 01-05 scripts.")
+    ap = argparse.ArgumentParser(description="Batch runner for ENS1M 01-06 scripts.")
     ap.add_argument("--date", help="Target date YYYYMMDD (default: today)")
     ap.add_argument("--start", help="Start date YYYYMMDD")
     ap.add_argument("--end", help="End date YYYYMMDD (inclusive)")
@@ -572,6 +572,7 @@ def main(argv=None) -> int:
     s03 = scripts_dir / "03_make_ens1m_hourly_wind.py"
     s04 = scripts_dir / "04_make_ens1m_daily.py"
     s05 = scripts_dir / "05_make_ens1m_daily_wind.py"
+    s06 = scripts_dir / "06_make_ens1m_daily_gsr.py"
     s16 = scripts_dir / "16_plot_ens1m_daily_check_points.py"
     s17 = scripts_dir / "17_plot_ens1m_hourly_check_points.py"
 
@@ -747,6 +748,21 @@ def main(argv=None) -> int:
             print(f"[STAGE START] {_now_str()} stage=extend_with_previous_thursday", flush=True)
             _extend_outputs_with_previous_thursday(out_root, d, vars_list)
             print(f"[STAGE END] {_now_str()} stage=extend_with_previous_thursday", flush=True)
+
+            # 06: daily GSR from the finalized daily TCDC. On non-Thursdays,
+            # this means the current initialization plus the previous-Thursday
+            # tail, matching the treatment of the other final daily products.
+            print(f"[STAGE START] {_now_str()} stage=06_make_ens1m_daily_gsr", flush=True)
+            tcdc_daily = _find_existing_data_file(out_root, d, "TCDC", "daily")
+            if "TCDC" in vars_list and tcdc_daily is not None:
+                if not _run(
+                    [py, str(s06), "--date", d, "--base", str(out_root)],
+                    args.stop_on_error,
+                ):
+                    date_had_error = True
+            else:
+                print(f"[SKIP] daily GSR missing TCDC for {d}", flush=True)
+            print(f"[STAGE END] {_now_str()} stage=06_make_ens1m_daily_gsr", flush=True)
 
             # Update status before plotting
             if enable_status and not date_had_error:

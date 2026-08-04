@@ -12,5 +12,6 @@ figures
 plots
 log
 status/
+local_scripts/
 
 environment.yml

@@ -50,6 +50,8 @@ ENS1M データの変換、hourly/daily 作成、風速風向作成、確認用�
   daily 作成
 - [`scripts/05_make_ens1m_daily_wind.py`](/Users/nemo/linux_work/JMA_GPV/scripts/05_make_ens1m_daily_wind.py)
   `UGRD` / `VGRD` から `WS` / `WD` の daily 作成
+- `scripts/06_make_ens1m_daily_gsr.py`
+  daily の `TCDC`（全雲量）から FAO-56 の大気外日射量を用いて `GSR` を作成（日次バッチのステージ06）
 
 ## 出力ファイル一覧
 
@@ -85,6 +87,30 @@ data/ENS1M/YYYY/VAR/
 | `VGRD` | `ENS1M_1w2w_yyyymmdd_VGRD.nc` | `ENS1M_1m_yyyymmdd_VGRD.nc` | `ENS1M_hourly_yyyymmdd_VGRD.nc` | `ENS1M_daily_yyyymmdd_VGRD.nc` | 南北風成分 |
 | `WS` | なし | なし | `ENS1M_hourly_yyyymmdd_WS.nc` | `ENS1M_daily_yyyymmdd_WS.nc` | `UGRD` / `VGRD` から派生 |
 | `WD` | なし | なし | `ENS1M_hourly_yyyymmdd_WD.nc` | `ENS1M_daily_yyyymmdd_WD.nc` | `UGRD` / `VGRD` から派生 |
+| `GSR` | なし | なし | なし | `ENS1M_daily_yyyymmdd_GSR.nc` | `TCDC_daymean` から派生、単位 `MJ m-2 day-1` |
+
+### GSR の独立実行
+
+日次バッチのステージ06として自動実行されます。単独で初期値日1日分のファイルを作る例:
+
+バッチでは、他のdaily要素と同様に、当日初期値を主体として、非木曜日には不足する
+予報末尾を前木曜日初期値で延長した最終TCDCからGSRを作成します。
+
+```bash
+python scripts/06_make_ens1m_daily_gsr.py --date 20260329
+```
+
+動作確認後に期間指定で作る例（TCDC がない初期値日はスキップ）:
+
+```bash
+python scripts/06_make_ens1m_daily_gsr.py \
+  --start 20260101 --end 20261231 --skip-missing
+```
+
+計算式は `GSR = Ra * (0.75 - 0.50 C)` です。`Ra` は各予報日・各緯度について
+FAO-56 (Allen et al., 1998) の日積算大気外日射量、`C` は `TCDC_daymean` を
+0–1 に直した全雲量です。出力にはアンサンブル各メンバーの `GSR`、平均、
+スプレッド、パーセンタイル、および検算用の `Ra` が入ります。
 
 ### upper 変数
 
